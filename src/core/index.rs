@@ -8,13 +8,15 @@ impl Count {
     /// max i64, so we can't double `2**62` and still represent it as an i64.
     pub const MAX: Count = Count(4_611_686_018_427_387_904_i64);
 
-    /// Returns 2 * self or MAX, whichever is smaller.
+    /// Returns `clamp(2 * self, min_value, MAX)`.
     /// Useful for growing containers via reallocation.
-    pub fn double_or_max(self) -> Self {
+    /// `min_value` should be smallish, e.g., 1 to 16;
+    /// if it's greater than `MAX` then bugs are on you.
+    pub fn double_or_max(self, min_value: i64) -> Self {
         if self.0 >= Count::MAX.0 / 2 {
             return Count::MAX;
         }
-        return Count(self.0 * 2);
+        return Count(min_value.max(self.0 * 2));
     }
 }
 
@@ -128,20 +130,28 @@ mod test {
     use super::*;
 
     #[test]
+    fn count_double_or_max_for_very_small_values() {
+        assert_eq!(Count(0).double_or_max(1), Count(1));
+        assert_eq!(Count(0).double_or_max(2), Count(2));
+        assert_eq!(Count(1).double_or_max(1001), Count(1001));
+        assert_eq!(Count(200).double_or_max(400), Count(400));
+    }
+
+    #[test]
     fn count_double_or_max_for_small_values() {
-        assert_eq!(Count(123).double_or_max(), Count(246));
-        assert_eq!(Count(100_010_001).double_or_max(), Count(200_020_002));
+        assert_eq!(Count(123).double_or_max(2), Count(246));
+        assert_eq!(Count(100_010_001).double_or_max(3), Count(200_020_002));
         assert_eq!(
-            Count(Count::MAX.0 / 2 - 1).double_or_max(),
+            Count(Count::MAX.0 / 2 - 1).double_or_max(4),
             Count(4_611_686_018_427_387_902)
         );
     }
 
     #[test]
     fn count_double_or_max_for_large_values() {
-        assert_eq!(Count::MAX.double_or_max(), Count::MAX);
-        assert_eq!(Count(Count::MAX.0 - 5).double_or_max(), Count::MAX);
-        assert_eq!(Count(Count::MAX.0 / 2 + 5).double_or_max(), Count::MAX);
+        assert_eq!(Count::MAX.double_or_max(5), Count::MAX);
+        assert_eq!(Count(Count::MAX.0 - 5).double_or_max(6), Count::MAX);
+        assert_eq!(Count(Count::MAX.0 / 2 + 5).double_or_max(7), Count::MAX);
     }
 
     #[test]
