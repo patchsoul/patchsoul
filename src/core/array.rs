@@ -46,6 +46,7 @@ impl<T: std::default::Default> Array<T> {
         if self.capacity == self.count {
             self.grow()?;
         }
+        assert!(self.count.0 >= 0);
         unsafe {
             ptr::write(self.ptr.as_ptr().add(self.count.0 as usize), value);
         }
@@ -64,22 +65,60 @@ impl<T: std::default::Default> Array<T> {
         }
     }
 
-    pub fn clear(&mut self) {
-        // We could optimize this but we do need Rust to deallocate the individual
-        // elements, so we can't just dealloc the `ptr` itself.
+    pub fn clear(&mut self, options: Clear) {
+        // We could optimize this but we do need Rust to drop each individual
+        // element (if necessary), so we can't just dealloc the `ptr` itself.
         while let Some(_) = self.pop_last() {}
+        assert!(self.count.0 == 0);
+        match options {
+            Clear::KeepCapacity => {}
+            Clear::DropCapacity => {
+                if self.capacity.0 > 0 {
+                    unsafe {
+                        alloc::dealloc(self.as_ptr_mut_u8(), self.layout());
+                    }
+                    self.ptr = NonNull::dangling();
+                    self.capacity = Count(0);
+                }
+            }
+        }
     }
 
-    fn as_ptr_mut_u8(&mut self) -> *mut u8 {
-        return self.ptr.as_ptr() as *mut u8;
+    pub fn capacity(&self) -> Count {
+        return self.capacity;
     }
 
-    fn layout(&self) -> alloc::Layout {
-        return Self::layout_of(self.capacity).unwrap();
-    }
+    /// Will reallocate to exactly this capacity.
+    /// Will delete items if `new_capacity < self.count()`
+    pub fn mut_capacity(&mut self, new_capacity: Count) -> Arrayed {
+        if new_capacity.0 == self.capacity.0 {
+            return Ok(());
+        } else if new_capacity.0 <= 0 {
+            self.clear(Clear::DropCapacity);
+            return Ok(());
+        }
 
-    fn layout_of(capacity: Count) -> ArrayResult<alloc::Layout> {
-        alloc::Layout::array::<T>(capacity.0 as usize).or(Err(ArrayError::OutOfMemory))
+        while self.count.0 > new_capacity.0 {
+            _ = self.pop_last();
+        }
+        let new_layout = Self::layout_of(new_capacity)?;
+        let new_ptr = unsafe {
+            if self.capacity.0 == 0 {
+                alloc::alloc(new_layout)
+            } else {
+                alloc::realloc(self.as_ptr_mut_u8(), self.layout(), new_layout.size())
+            }
+        } as *mut T;
+        match NonNull::new(new_ptr) {
+            Some(new_ptr) => {
+                self.ptr = new_ptr;
+                self.capacity = new_capacity;
+                return Ok(());
+            }
+            None => {
+                return ArrayError::OutOfMemory.err();
+            }
+        }
     }
 
     fn grow(&mut self) -> Arrayed {
@@ -97,47 +136,16 @@ impl<T: std::default::Default> Array<T> {
         self.capacity.double_or_max(starting_alloc)
     }
 
-    fn reset(&mut self) {
-        if self.capacity.0 > 0 {
-            self.clear();
-            unsafe {
-                alloc::dealloc(self.as_ptr_mut_u8(), self.layout());
-            }
-            self.ptr = NonNull::dangling();
-            self.capacity = Count(0);
-        }
+    fn as_ptr_mut_u8(&mut self) -> *mut u8 {
+        return self.ptr.as_ptr() as *mut u8;
     }
 
-    /// Will reallocate to exactly this capacity, prefer `grow()`.
-    /// Will delete items if `new_capacity < self.count()`
-    fn mut_capacity(&mut self, new_capacity: Count) -> Arrayed {
-        if new_capacity.0 == self.capacity.0 {
-            return Ok(());
-        } else if new_capacity.0 <= 0 {
-            self.reset();
-        } else if new_capacity.0 < self.count.0 {
-            while self.count.0 > new_capacity.0 {
-                _ = self.pop_last();
-            }
-            // fall through
-        } else {
-            // new_capacity != self.capacity
-            // fall through
-        }
-        let new_layout = Self::layout_of(new_capacity)?;
-        let new_ptr = unsafe {
-            alloc::realloc(self.as_ptr_mut_u8(), self.layout(), new_layout.size()) as *mut T
-        };
-        match NonNull::new(new_ptr) {
-            Some(new_ptr) => {
-                self.ptr = new_ptr;
-                self.capacity = new_capacity;
-                return Ok(());
-            }
-            None => {
-                return ArrayError::OutOfMemory.err();
-            }
-        }
+    fn layout(&self) -> alloc::Layout {
+        return Self::layout_of(self.capacity).unwrap();
+    }
+
+    fn layout_of(capacity: Count) -> ArrayResult<alloc::Layout> {
+        alloc::Layout::array::<T>(capacity.0 as usize).or(Err(ArrayError::OutOfMemory))
     }
 }
 
@@ -149,7 +157,7 @@ impl<T: std::default::Default> Default for Array<T> {
 
 impl<T: std::default::Default> Drop for Array<T> {
     fn drop(&mut self) {
-        self.reset();
+        self.clear(Clear::DropCapacity);
     }
 }
 
@@ -173,6 +181,13 @@ unsafe impl<T: Send + std::default::Default> Send for Array<T> {}
 unsafe impl<T: Sync + std::default::Default> Sync for Array<T> {}
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Default, Hash)]
+pub enum Clear {
+    #[default]
+    KeepCapacity,
+    DropCapacity,
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Default, Hash)]
 pub enum Pop {
     #[default]
     Last,
@@ -184,4 +199,24 @@ pub enum Pop {
 pub enum Sort {
     #[default]
     Default,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn push_and_pop() {
+        let mut array = Array::<u32>::new();
+        array.mut_capacity(Count(3)).expect("small alloc");
+        array.push(1).expect("already allocked");
+        array.push(2).expect("already allocked");
+        array.push(3).expect("already allocked");
+        assert_eq!(array.count(), Count(3));
+        assert_eq!(array.pop_last(), Some(3));
+        assert_eq!(array.pop_last(), Some(2));
+        assert_eq!(array.pop_last(), Some(1));
+        assert_eq!(array.count(), Count(0));
+        assert_eq!(array.capacity(), Count(3));
+    }
 }
