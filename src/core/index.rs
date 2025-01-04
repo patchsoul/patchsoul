@@ -1,6 +1,6 @@
 pub type Offset = i64;
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Default, Hash)]
-pub struct Count(i64);
+pub struct Count(pub i64);
 
 impl Count {
     /// 2**62; a ginormous value that is pretty safe to get to, but
