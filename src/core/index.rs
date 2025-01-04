@@ -2,6 +2,22 @@ pub type Offset = i64;
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Default, Hash)]
 pub struct Count(i64);
 
+impl Count {
+    /// 2**62; a ginormous value that is pretty safe to get to, but
+    /// which you can't safely multiply by 2.  E.g., `2**63 - 1` is the
+    /// max i64, so we can't double `2**62` and still represent it as an i64.
+    pub const MAX: Count = Count(4_611_686_018_427_387_904_i64);
+
+    /// Returns 2 * self or MAX, whichever is smaller.
+    /// Useful for growing containers via reallocation.
+    pub fn double_or_max(self) -> Self {
+        if self.0 >= Count::MAX.0 / 2 {
+            return Count::MAX;
+        }
+        return Count(self.0 * 2);
+    }
+}
+
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
 pub enum Index {
     /// Zero-based indexing into an ordered sequence with partial wrap around, e.g.,
@@ -110,6 +126,23 @@ impl OffsetCheck {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn count_double_or_max_for_small_values() {
+        assert_eq!(Count(123).double_or_max(), Count(246));
+        assert_eq!(Count(100_010_001).double_or_max(), Count(200_020_002));
+        assert_eq!(
+            Count(Count::MAX.0 / 2 - 1).double_or_max(),
+            Count(4_611_686_018_427_387_902)
+        );
+    }
+
+    #[test]
+    fn count_double_or_max_for_large_values() {
+        assert_eq!(Count::MAX.double_or_max(), Count::MAX);
+        assert_eq!(Count(Count::MAX.0 - 5).double_or_max(), Count::MAX);
+        assert_eq!(Count(Count::MAX.0 / 2 + 5).double_or_max(), Count::MAX);
+    }
 
     #[test]
     fn of_positive_values_less_than_count() {
