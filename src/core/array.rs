@@ -1,11 +1,29 @@
+use crate::core::allocation::*;
 use crate::core::index::*;
 
-use std::alloc;
-use std::ptr::{self, NonNull};
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
+pub enum ArrayError {
+    Allocation(AllocationError),
+    InvalidCount,
+}
+
+impl std::default::Default for ArrayError {
+    fn default() -> Self {
+        return ArrayError::Allocation(AllocationError::OutOfMemory);
+    }
+}
+
+pub type ArrayResult<T> = Result<T, ArrayError>;
+pub type Arrayed = ArrayResult<()>;
+
+impl ArrayError {
+    pub fn err(self) -> Arrayed {
+        return Err(self);
+    }
+}
 
 pub struct Array<T: std::default::Default> {
-    ptr: NonNull<T>,
-    capacity: Count,
+    allocation: Allocation<T>,
     count: Count,
 }
 
@@ -13,8 +31,7 @@ pub struct Array<T: std::default::Default> {
 impl<T: std::default::Default> Array<T> {
     pub fn new() -> Self {
         Self {
-            ptr: NonNull::dangling(),
-            capacity: Count(0),
+            allocation: Allocation::new(),
             count: Count(0),
         }
     }
@@ -31,7 +48,7 @@ impl<T: std::default::Default> Array<T> {
                 _ = self.pop_last();
             }
         } else if new_count.0 > self.count.0 {
-            if new_count.0 > self.capacity.0 {
+            if new_count.0 > self.capacity().0 {
                 self.mut_capacity(new_count)?;
             }
             while self.count.0 < new_count.0 {
@@ -43,13 +60,12 @@ impl<T: std::default::Default> Array<T> {
     }
 
     pub fn push(&mut self, value: T) -> Arrayed {
-        if self.capacity == self.count {
+        if self.capacity() == self.count {
             self.grow()?;
         }
-        assert!(self.count.0 >= 0);
-        unsafe {
-            ptr::write(self.ptr.as_ptr().add(self.count.0 as usize), value);
-        }
+        self.allocation
+            .write_uninitialized(self.count.0, value)
+            .expect("should be in bounds");
         self.count.0 += 1;
         return Ok(());
     }
@@ -60,92 +76,53 @@ impl<T: std::default::Default> Array<T> {
             return None;
         }
         self.count.0 -= 1;
-        unsafe {
-            return Some(ptr::read(self.ptr.as_ptr().add(self.count.0 as usize)));
-        }
+        Some(
+            self.allocation
+                .read_destructively(self.count.0)
+                .expect("should be in bounds"),
+        )
     }
 
     pub fn clear(&mut self, options: Clear) {
         // We could optimize this but we do need Rust to drop each individual
         // element (if necessary), so we can't just dealloc the `ptr` itself.
         while let Some(_) = self.pop_last() {}
+
         assert!(self.count.0 == 0);
+
         match options {
             Clear::KeepCapacity => {}
-            Clear::DropCapacity => {
-                if self.capacity.0 > 0 {
-                    unsafe {
-                        alloc::dealloc(self.as_ptr_mut_u8(), self.layout());
-                    }
-                    self.ptr = NonNull::dangling();
-                    self.capacity = Count(0);
-                }
-            }
+            Clear::DropCapacity => self
+                .mut_capacity(Count(0))
+                .expect("clearing should not alloc"),
         }
     }
 
     pub fn capacity(&self) -> Count {
-        return self.capacity;
+        return self.allocation.capacity();
     }
 
     /// Will reallocate to exactly this capacity.
     /// Will delete items if `new_capacity < self.count()`
     pub fn mut_capacity(&mut self, new_capacity: Count) -> Arrayed {
-        if new_capacity.0 == self.capacity.0 {
-            return Ok(());
-        } else if new_capacity.0 <= 0 {
-            self.clear(Clear::DropCapacity);
+        if new_capacity.0 == self.capacity().0 {
             return Ok(());
         }
-
         while self.count.0 > new_capacity.0 {
-            _ = self.pop_last();
-        }
-        let new_layout = Self::layout_of(new_capacity)?;
-        let new_ptr = unsafe {
-            if self.capacity.0 == 0 {
-                alloc::alloc(new_layout)
-            } else {
-                alloc::realloc(self.as_ptr_mut_u8(), self.layout(), new_layout.size())
-            }
-        } as *mut T;
-        match NonNull::new(new_ptr) {
-            Some(new_ptr) => {
-                self.ptr = new_ptr;
-                self.capacity = new_capacity;
-                return Ok(());
-            }
-            None => {
-                return ArrayError::OutOfMemory.err();
+            if self.pop_last().is_none() {
+                // Can happen if new_capacity < 0
+                break;
             }
         }
+        self.allocation
+            .mut_capacity(new_capacity)
+            .map_err(|e| ArrayError::Allocation(e))
     }
 
     fn grow(&mut self) -> Arrayed {
-        let desired_capacity = self.roughly_double_capacity();
-        if desired_capacity.0 <= self.capacity.0 {
-            return ArrayError::OutOfMemory.err();
-        }
-        self.mut_capacity(desired_capacity)
-    }
-
-    fn roughly_double_capacity(&self) -> Count {
-        // TODO: determine starting_alloc based on sizeof(T), use at least 1,
-        // maybe more if T is small.
-        let starting_alloc = 2;
-        self.capacity.double_or_max(starting_alloc)
-    }
-
-    fn as_ptr_mut_u8(&mut self) -> *mut u8 {
-        return self.ptr.as_ptr() as *mut u8;
-    }
-
-    fn layout(&self) -> alloc::Layout {
-        return Self::layout_of(self.capacity).unwrap();
-    }
-
-    fn layout_of(capacity: Count) -> ArrayResult<alloc::Layout> {
-        alloc::Layout::array::<T>(capacity.0 as usize).or(Err(ArrayError::OutOfMemory))
+        self.allocation
+            .grow()
+            .map_err(|e| ArrayError::Allocation(e))
     }
 }
 
@@ -158,22 +135,6 @@ impl<T: std::default::Default> Default for Array<T> {
 impl<T: std::default::Default> Drop for Array<T> {
     fn drop(&mut self) {
         self.clear(Clear::DropCapacity);
-    }
-}
-
-#[derive(Eq, PartialEq, Copy, Clone, Default, Debug, Hash)]
-pub enum ArrayError {
-    #[default]
-    OutOfMemory,
-    InvalidCount,
-}
-
-pub type ArrayResult<T> = Result<T, ArrayError>;
-pub type Arrayed = ArrayResult<()>;
-
-impl ArrayError {
-    pub fn err(self) -> Arrayed {
-        return Err(self);
     }
 }
 
@@ -218,5 +179,14 @@ mod test {
         assert_eq!(array.pop_last(), Some(1));
         assert_eq!(array.count(), Count(0));
         assert_eq!(array.capacity(), Count(3));
+    }
+
+    #[test]
+    fn clear_keep_capacity() {
+        // TODO: switch to noisy
+        let mut array = Array::<u8>::new();
+        array.mut_capacity(Count(10)).expect("small alloc");
+        // TODO
+        assert_eq!(array.capacity(), Count(10));
     }
 }
