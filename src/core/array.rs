@@ -22,13 +22,13 @@ impl ArrayError {
     }
 }
 
-pub struct Array<T: std::default::Default> {
+pub struct Array<T> {
     allocation: Allocation<T>,
     count: Count,
 }
 
 // TODO: implement #[derive(Eq, PartialEq, Clone, Debug, Hash)]
-impl<T: std::default::Default> Array<T> {
+impl<T> Array<T> {
     pub fn new() -> Self {
         Self {
             allocation: Allocation::new(),
@@ -39,24 +39,6 @@ impl<T: std::default::Default> Array<T> {
     // TODO: this should be a Countable Trait
     pub fn count(&self) -> Count {
         return self.count;
-    }
-
-    // TODO: this should be a Countable Trait
-    pub fn mut_count(&mut self, new_count: Count) -> Arrayed {
-        if new_count.0 < self.count.0 {
-            while self.count.0 > new_count.0 {
-                _ = self.pop_last();
-            }
-        } else if new_count.0 > self.count.0 {
-            if new_count.0 > self.capacity().0 {
-                self.mut_capacity(new_count)?;
-            }
-            while self.count.0 < new_count.0 {
-                self.push(Default::default())
-                    .expect("already allocated enough above");
-            }
-        }
-        return Ok(());
     }
 
     pub fn push(&mut self, value: T) -> Arrayed {
@@ -126,20 +108,40 @@ impl<T: std::default::Default> Array<T> {
     }
 }
 
-impl<T: std::default::Default> Default for Array<T> {
+impl<T: std::default::Default> Array<T> {
+    // TODO: this should be a Countable Trait
+    pub fn mut_count(&mut self, new_count: Count) -> Arrayed {
+        if new_count.0 < self.count.0 {
+            while self.count.0 > new_count.0 {
+                _ = self.pop_last();
+            }
+        } else if new_count.0 > self.count.0 {
+            if new_count.0 > self.capacity().0 {
+                self.mut_capacity(new_count)?;
+            }
+            while self.count.0 < new_count.0 {
+                self.push(Default::default())
+                    .expect("already allocated enough above");
+            }
+        }
+        return Ok(());
+    }
+}
+
+impl<T> Default for Array<T> {
     fn default() -> Self {
         return Self::new();
     }
 }
 
-impl<T: std::default::Default> Drop for Array<T> {
+impl<T> Drop for Array<T> {
     fn drop(&mut self) {
         self.clear(Clear::DropCapacity);
     }
 }
 
-unsafe impl<T: Send + std::default::Default> Send for Array<T> {}
-unsafe impl<T: Sync + std::default::Default> Sync for Array<T> {}
+unsafe impl<T: Send> Send for Array<T> {}
+unsafe impl<T: Sync> Sync for Array<T> {}
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Default, Hash)]
 pub enum Clear {
@@ -179,6 +181,19 @@ mod test {
         assert_eq!(array.pop_last(), Some(1));
         assert_eq!(array.count(), Count(0));
         assert_eq!(array.capacity(), Count(3));
+    }
+
+    #[test]
+    fn mut_count_supplies_defaults() {
+        let mut array = Array::<u32>::new();
+        array.mut_count(Count(5)).expect("small alloc");
+        assert_eq!(array.count(), Count(5));
+        assert_eq!(array.pop_last(), Some(0));
+        assert_eq!(array.pop_last(), Some(0));
+        assert_eq!(array.pop_last(), Some(0));
+        assert_eq!(array.pop_last(), Some(0));
+        assert_eq!(array.pop_last(), Some(0));
+        assert_eq!(array.count(), Count(0));
     }
 
     #[test]
