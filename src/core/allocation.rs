@@ -1,6 +1,7 @@
 use crate::core::index::*;
 
 use std::alloc;
+use std::marker::PhantomData;
 use std::ptr::{self, NonNull};
 
 #[derive(Eq, PartialEq, Copy, Clone, Default, Debug, Hash)]
@@ -19,55 +20,64 @@ impl AllocationError {
     }
 }
 
-/// Low-level structure that has a pointer to contiguous memory and some capacity.
-/// You need to keep track of which elements are initialized, etc.
 pub type Allocation<T> = AllocationN<T, i64>;
+pub type Allocation64<T> = Allocation<T>;
+pub type Allocation32<T> = AllocationN<T, i32>;
+pub type Allocation16<T> = AllocationN<T, i16>;
+pub type Allocation8<T> = AllocationN<T, i8>;
 
+/// Low-level structure that has a pointer to contiguous memory.
+/// You need to keep track of which elements are initialized, etc.,
+/// as well as the capacity as `CountN<C>`.
 #[repr(C)]
 pub struct AllocationN<T, C: SignedPrimitive> {
-    capacity: CountN<C>,
+    count_type: PhantomData<C>,
     ptr: NonNull<T>,
 }
 
 impl<T, C: SignedPrimitive> AllocationN<T, C> {
     pub fn new() -> Self {
         Self {
-            capacity: CountN::<C>::default(),
+            count_type: PhantomData,
             ptr: NonNull::dangling(),
         }
     }
 
-    pub fn capacity(&self) -> CountN<C> {
-        return self.capacity;
-    }
-
     /// Ensure that you've already dropped elements that you might delete here
-    /// if the new capacity is less than the old.
-    pub fn mut_capacity(&mut self, new_capacity: CountN<C>) -> Allocated {
+    /// if the new capacity is less than the old.  The old capacity will be updated
+    /// iff the capacity change succeeds.
+    pub fn mut_capacity(&mut self, capacity: &mut CountN<C>, new_capacity: CountN<C>) -> Allocated {
         if new_capacity <= CountN::<C>::of(C::zero()) {
-            if self.capacity() > CountN::<C>::of(C::zero()) {
+            if *capacity > CountN::<C>::of(C::zero()) {
                 unsafe {
-                    alloc::dealloc(self.as_ptr_mut_u8(), self.layout());
+                    alloc::dealloc(
+                        self.as_ptr_mut_u8(),
+                        Self::layout_of(*capacity).expect("already allocked"),
+                    );
                 }
                 self.ptr = NonNull::dangling();
-                self.capacity = CountN::<C>::of(C::zero());
+                *capacity = CountN::<C>::of(C::zero());
             }
             return Ok(());
-        } else if new_capacity == self.capacity {
+        } else if new_capacity == *capacity {
             return Ok(());
         }
         let new_layout = Self::layout_of(new_capacity)?;
         let new_ptr = unsafe {
-            if self.capacity == CountN::<C>::of(C::zero()) {
+            if *capacity == CountN::<C>::of(C::zero()) {
                 alloc::alloc(new_layout)
             } else {
-                alloc::realloc(self.as_ptr_mut_u8(), self.layout(), new_layout.size())
+                alloc::realloc(
+                    self.as_ptr_mut_u8(),
+                    Self::layout_of(*capacity).expect("already allocked"),
+                    new_layout.size(),
+                )
             }
         } as *mut T;
         match NonNull::new(new_ptr) {
             Some(new_ptr) => {
                 self.ptr = new_ptr;
-                self.capacity = new_capacity;
+                *capacity = new_capacity;
                 return Ok(());
             }
             None => {
@@ -77,8 +87,13 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
     }
 
     /// Writes to an offset that should not be considered initialized.
-    pub fn write_uninitialized(&mut self, offset: Offset, value: T) -> Allocated {
-        if !self.capacity.contains(offset) {
+    pub fn write_uninitialized(
+        &mut self,
+        value: T,
+        offset: Offset,
+        capacity: CountN<C>,
+    ) -> Allocated {
+        if !capacity.contains(offset) {
             return AllocationError::InvalidOffset.err();
         }
         unsafe {
@@ -89,46 +104,48 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
 
     /// Reads at the offset, and from now on, that offset should be considered
     /// uninitialized.
-    pub fn read_destructively(&self, offset: Offset) -> AllocationResult<T> {
-        if !self.capacity.contains(offset) {
+    pub fn read_destructively(&self, offset: Offset, capacity: CountN<C>) -> AllocationResult<T> {
+        if !capacity.contains(offset) {
             return Err(AllocationError::InvalidOffset);
         }
         Ok(unsafe { ptr::read(self.ptr.as_ptr().add(offset as usize)) })
     }
 
-    pub fn grow(&mut self) -> Allocated {
-        let desired_capacity = self.roughly_double_capacity();
-        if desired_capacity <= self.capacity {
+    pub fn grow(&mut self, capacity: &mut CountN<C>) -> Allocated {
+        let desired_capacity = self.roughly_double_capacity(*capacity);
+        if desired_capacity <= *capacity {
             return AllocationError::OutOfMemory.err();
         }
-        self.mut_capacity(desired_capacity)
+        self.mut_capacity(capacity, desired_capacity)
     }
 
-    fn roughly_double_capacity(&self) -> CountN<C> {
+    fn roughly_double_capacity(&self, capacity: CountN<C>) -> CountN<C> {
         // TODO: determine starting_alloc based on sizeof(T), use at least 1,
         // maybe more if T is small.
         let starting_alloc = 2;
-        self.capacity.double_or_max(starting_alloc)
+        capacity.double_or_max(starting_alloc)
     }
 
-    pub fn as_ptr(&self) -> *mut T {
-        assert!(self.capacity > CountN::<C>::of(C::zero()));
-        self.ptr.as_ptr()
+    /// Caller is responsible for 0 to count-1 (inclusive) being initialized.
+    pub fn as_slice(&self, count: CountN<C>, capacity: CountN<C>) -> &[T] {
+        assert!(count <= capacity);
+        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), count.into()) }
     }
 
+    /// Caller is responsible for 0 to count-1 (inclusive) being initialized.
+    pub fn as_slice_mut(&self, count: CountN<C>, capacity: CountN<C>) -> &mut [T] {
+        assert!(count <= capacity);
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), count.into()) }
+    }
+
+    /// Caller is responsible for capacity being > 0
     fn as_ptr_mut_u8(&mut self) -> *mut u8 {
         return self.ptr.as_ptr() as *mut u8;
-    }
-
-    fn layout(&self) -> alloc::Layout {
-        return Self::layout_of(self.capacity).unwrap();
     }
 
     fn layout_of(capacity: CountN<C>) -> AllocationResult<alloc::Layout> {
         alloc::Layout::array::<T>(capacity.into()).or(Err(AllocationError::OutOfMemory))
     }
-
-    // TODO: something like to_ptr and from_ptr, for Shtick functionality
 }
 
 impl<T> Default for Allocation<T> {

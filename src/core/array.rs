@@ -22,17 +22,23 @@ impl ArrayError {
     }
 }
 
+// TODO: make an option to use a smaller `Count`, and even like Allocation
+// to have a `&mut count` somewhere else, e.g., for Shtick's.
+// probably want some `array_push` and `array_pop`-like functions for the generic case,
+// which are used inside `Array.push`, etc.
 pub struct Array<T> {
-    allocation: Allocation<T>,
     count: Count,
+    capacity: Count,
+    allocation: Allocation<T>,
 }
 
 // TODO: implement #[derive(Clone, Debug, Hash)]
 impl<T> Array<T> {
     pub fn new() -> Self {
         Self {
-            allocation: Allocation::new(),
             count: Count::of(0),
+            capacity: Count::of(0),
+            allocation: Allocation::new(),
         }
     }
 
@@ -42,12 +48,12 @@ impl<T> Array<T> {
     }
 
     pub fn push(&mut self, value: T) -> Arrayed {
-        if self.capacity() == self.count {
+        if self.capacity == self.count {
             self.grow()?;
         }
         self.count += 1;
         self.allocation
-            .write_uninitialized(self.count.max_offset(), value)
+            .write_uninitialized(value, self.count.max_offset(), self.capacity)
             .expect("should be in bounds");
         return Ok(());
     }
@@ -59,7 +65,7 @@ impl<T> Array<T> {
         }
         let result = Some(
             self.allocation
-                .read_destructively(self.count.max_offset())
+                .read_destructively(self.count.max_offset(), self.capacity)
                 .expect("should be in bounds"),
         );
         self.count -= 1;
@@ -82,7 +88,7 @@ impl<T> Array<T> {
     }
 
     pub fn capacity(&self) -> Count {
-        return self.allocation.capacity();
+        return self.capacity;
     }
 
     /// Will reallocate to exactly this capacity.
@@ -93,18 +99,18 @@ impl<T> Array<T> {
         }
         while self.count > new_capacity {
             if self.pop_last().is_none() {
-                // Can happen if new_capacity < 0
+                // Could happen if new_capacity < 0
                 break;
             }
         }
         self.allocation
-            .mut_capacity(new_capacity)
+            .mut_capacity(&mut self.capacity, new_capacity)
             .map_err(|e| ArrayError::Allocation(e))
     }
 
     fn grow(&mut self) -> Arrayed {
         self.allocation
-            .grow()
+            .grow(&mut self.capacity)
             .map_err(|e| ArrayError::Allocation(e))
     }
 }
@@ -117,7 +123,7 @@ impl<T: std::default::Default> Array<T> {
                 _ = self.pop_last();
             }
         } else if new_count > self.count {
-            if new_count > self.capacity() {
+            if new_count > self.capacity {
                 self.mut_capacity(new_count)?;
             }
             while self.count < new_count {
@@ -132,13 +138,13 @@ impl<T: std::default::Default> Array<T> {
 impl<T> std::ops::Deref for Array<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
-        unsafe { std::slice::from_raw_parts(self.allocation.as_ptr(), self.count.into()) }
+        self.allocation.as_slice(self.count, self.capacity)
     }
 }
 
 impl<T> std::ops::DerefMut for Array<T> {
     fn deref_mut(&mut self) -> &mut [T] {
-        unsafe { std::slice::from_raw_parts_mut(self.allocation.as_ptr(), self.count.into()) }
+        self.allocation.as_slice_mut(self.count, self.capacity)
     }
 }
 
