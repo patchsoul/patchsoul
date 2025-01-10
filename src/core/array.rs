@@ -48,43 +48,93 @@ impl<T> Array<T> {
     }
 
     pub fn push(&mut self, value: T) -> Arrayed {
-        if self.capacity == self.count {
-            self.grow()?;
+        Self::array_push(
+            value,
+            &mut self.count,
+            &mut self.allocation,
+            &mut self.capacity,
+        )
+    }
+
+    #[inline]
+    pub fn array_push(
+        value: T,
+        count: &mut Count,
+        allocation: &mut Allocation<T>,
+        capacity: &mut Count,
+    ) -> Arrayed {
+        if *capacity == *count {
+            Self::array_grow(allocation, capacity)?;
         }
-        self.count += 1;
-        self.allocation
-            .write_uninitialized(value, self.count.max_offset(), self.capacity)
+        *count += 1;
+        allocation
+            .write_uninitialized(value, count.max_offset(), *capacity)
             .expect("should be in bounds");
         return Ok(());
     }
 
-    // TODO: add an `enum Pop {Last, First, Index(Index)}` argument to a new `pop` method.
-    pub fn pop_last(&mut self) -> Option<T> {
-        if self.count <= Count::of(0) {
+    pub fn pop(&mut self, pop: Pop) -> Option<T> {
+        Self::array_pop(pop, &mut self.count, &mut self.allocation, self.capacity)
+    }
+
+    #[inline]
+    pub fn array_pop(
+        pop: Pop,
+        count: &mut Count,
+        allocation: &mut Allocation<T>,
+        capacity: Count,
+    ) -> Option<T> {
+        match pop {
+            Pop::Last => Self::array_pop_last(count, allocation, capacity),
+        }
+    }
+
+    #[inline]
+    pub fn array_pop_last(
+        count: &mut Count,
+        allocation: &mut Allocation<T>,
+        capacity: Count,
+    ) -> Option<T> {
+        if *count <= Count::of(0) {
             return None;
         }
         let result = Some(
-            self.allocation
-                .read_destructively(self.count.max_offset(), self.capacity)
+            allocation
+                .read_destructively(count.max_offset(), capacity)
                 .expect("should be in bounds"),
         );
-        self.count -= 1;
+        *count -= 1;
         result
     }
 
     pub fn clear(&mut self, options: Clear) {
-        // We could optimize this but we do need Rust to drop each individual
-        // element (if necessary), so we can't just dealloc the `ptr` itself.
-        while let Some(_) = self.pop_last() {}
+        Self::array_clear(
+            options,
+            &mut self.count,
+            &mut self.allocation,
+            &mut self.capacity,
+        )
+    }
 
-        assert!(self.count == Count::of(0));
-
+    #[inline]
+    pub fn array_clear(
+        options: Clear,
+        count: &mut Count,
+        allocation: &mut Allocation<T>,
+        capacity: &mut Count,
+    ) {
         match options {
-            Clear::KeepCapacity => {}
-            Clear::DropCapacity => self
-                .mut_capacity(Count::of(0))
-                .expect("clearing should not alloc"),
+            Clear::KeepCapacity => {
+                // We could optimize this but we do need Rust to drop each individual
+                // element (if necessary), so we can't just dealloc the `ptr` itself.
+                while let Some(_) = Self::array_pop_last(count, allocation, *capacity) {}
+            }
+            Clear::DropCapacity => {
+                Self::array_mut_capacity(Count::of(0), count, allocation, capacity)
+                    .expect("clearing should not alloc")
+            }
         }
+        assert!(*count == Count::of(0));
     }
 
     pub fn capacity(&self) -> Count {
@@ -94,23 +144,45 @@ impl<T> Array<T> {
     /// Will reallocate to exactly this capacity.
     /// Will delete items if `new_capacity < self.count()`
     pub fn mut_capacity(&mut self, new_capacity: Count) -> Arrayed {
-        if new_capacity == self.capacity() {
+        Self::array_mut_capacity(
+            new_capacity,
+            &mut self.count,
+            &mut self.allocation,
+            &mut self.capacity,
+        )
+    }
+
+    #[inline]
+    pub fn array_mut_capacity(
+        new_capacity: Count,
+        count: &mut Count,
+        allocation: &mut Allocation<T>,
+        capacity: &mut Count,
+    ) -> Arrayed {
+        if new_capacity == *capacity {
             return Ok(());
         }
-        while self.count > new_capacity {
-            if self.pop_last().is_none() {
+        while *count > new_capacity {
+            // We could optimize this but we do need Rust to drop each individual
+            // element (if necessary), so we can't just dealloc the `ptr` itself.
+            if Self::array_pop_last(count, allocation, *capacity).is_none() {
                 // Could happen if new_capacity < 0
                 break;
             }
         }
-        self.allocation
-            .mut_capacity(&mut self.capacity, new_capacity)
+        allocation
+            .mut_capacity(capacity, new_capacity)
             .map_err(|e| ArrayError::Allocation(e))
     }
 
     fn grow(&mut self) -> Arrayed {
-        self.allocation
-            .grow(&mut self.capacity)
+        Self::array_grow(&mut self.allocation, &mut self.capacity)
+    }
+
+    #[inline]
+    fn array_grow(allocation: &mut Allocation<T>, capacity: &mut Count) -> Arrayed {
+        allocation
+            .grow(capacity)
             .map_err(|e| ArrayError::Allocation(e))
     }
 }
@@ -118,16 +190,31 @@ impl<T> Array<T> {
 impl<T: std::default::Default> Array<T> {
     // TODO: this should be a Countable Trait
     pub fn mut_count(&mut self, new_count: Count) -> Arrayed {
-        if new_count < self.count {
-            while self.count > new_count {
-                _ = self.pop_last();
+        Self::array_mut_count(
+            new_count,
+            &mut self.count,
+            &mut self.allocation,
+            &mut self.capacity,
+        )
+    }
+
+    #[inline]
+    pub fn array_mut_count(
+        new_count: Count,
+        count: &mut Count,
+        allocation: &mut Allocation<T>,
+        capacity: &mut Count,
+    ) -> Arrayed {
+        if new_count < *count {
+            while *count > new_count {
+                _ = Self::array_pop_last(count, allocation, *capacity);
             }
-        } else if new_count > self.count {
-            if new_count > self.capacity {
-                self.mut_capacity(new_count)?;
+        } else if new_count > *count {
+            if new_count > *capacity {
+                Self::array_mut_capacity(new_count, count, allocation, capacity)?;
             }
-            while self.count < new_count {
-                self.push(Default::default())
+            while *count < new_count {
+                Self::array_push(Default::default(), count, allocation, capacity)
                     .expect("already allocated enough above");
             }
         }
@@ -191,8 +278,9 @@ pub enum Clear {
 pub enum Pop {
     #[default]
     Last,
-    First,
-    Index(Index),
+    // TODO
+    //First,
+    //Index(Index),
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Default, Hash)]
@@ -213,9 +301,9 @@ mod test {
         array.push(2).expect("already allocked");
         array.push(3).expect("already allocked");
         assert_eq!(array.count(), Count::of(3));
-        assert_eq!(array.pop_last(), Some(3));
-        assert_eq!(array.pop_last(), Some(2));
-        assert_eq!(array.pop_last(), Some(1));
+        assert_eq!(array.pop(Pop::Last), Some(3));
+        assert_eq!(array.pop(Pop::Last), Some(2));
+        assert_eq!(array.pop(Pop::Last), Some(1));
         assert_eq!(array.count(), Count::of(0));
         assert_eq!(array.capacity(), Count::of(3));
     }
@@ -225,11 +313,11 @@ mod test {
         let mut array = Array::<u32>::new();
         array.mut_count(Count::of(5)).expect("small alloc");
         assert_eq!(array.count(), Count::of(5));
-        assert_eq!(array.pop_last(), Some(0));
-        assert_eq!(array.pop_last(), Some(0));
-        assert_eq!(array.pop_last(), Some(0));
-        assert_eq!(array.pop_last(), Some(0));
-        assert_eq!(array.pop_last(), Some(0));
+        assert_eq!(array.pop(Pop::Last), Some(0));
+        assert_eq!(array.pop(Pop::Last), Some(0));
+        assert_eq!(array.pop(Pop::Last), Some(0));
+        assert_eq!(array.pop(Pop::Last), Some(0));
+        assert_eq!(array.pop(Pop::Last), Some(0));
         assert_eq!(array.count(), Count::of(0));
     }
 
