@@ -34,16 +34,14 @@ pub type Array8<T> = ArrayN<T, i8>;
 pub struct ArrayN<T, C: SignedPrimitive> {
     allocation: AllocationN<T, C>,
     count: CountN<C>,
-    capacity: CountN<C>,
 }
 
 // TODO: implement #[derive(Clone, Debug, Hash)]
 impl<T, C: SignedPrimitive> ArrayN<T, C> {
     pub fn new() -> Self {
         Self {
-            count: CountN::<C>::of(C::zero()),
-            capacity: CountN::<C>::of(C::zero()),
             allocation: AllocationN::<T, C>::new(),
+            count: CountN::<C>::of(C::zero()),
         }
     }
 
@@ -53,59 +51,48 @@ impl<T, C: SignedPrimitive> ArrayN<T, C> {
     }
 
     pub fn push(&mut self, value: T) -> Arrayed {
-        Self::array_push(
-            value,
-            &mut self.count,
-            &mut self.allocation,
-            &mut self.capacity,
-        )
+        Self::array_push(value, &mut self.allocation, &mut self.count)
     }
 
     #[inline]
     pub fn array_push(
         value: T,
-        count: &mut CountN<C>,
         allocation: &mut AllocationN<T, C>,
-        capacity: &mut CountN<C>,
+        count: &mut CountN<C>,
     ) -> Arrayed {
-        if *capacity == *count {
-            Self::array_grow(allocation, capacity)?;
+        if allocation.capacity() == *count {
+            Self::array_grow(allocation)?;
         }
         *count += C::one();
         allocation
-            .write_uninitialized(value, count.max_offset(), *capacity)
+            .write_uninitialized(count.max_offset(), value)
             .expect("should be in bounds");
         return Ok(());
     }
 
     pub fn pop(&mut self, pop: Pop) -> Option<T> {
-        Self::array_pop(pop, &mut self.count, &mut self.allocation, self.capacity)
+        Self::array_pop(pop, &mut self.allocation, &mut self.count)
     }
 
     #[inline]
     pub fn array_pop(
         pop: Pop,
-        count: &mut CountN<C>,
         allocation: &mut AllocationN<T, C>,
-        capacity: CountN<C>,
+        count: &mut CountN<C>,
     ) -> Option<T> {
         match pop {
-            Pop::Last => Self::array_pop_last(count, allocation, capacity),
+            Pop::Last => Self::array_pop_last(allocation, count),
         }
     }
 
     #[inline]
-    pub fn array_pop_last(
-        count: &mut CountN<C>,
-        allocation: &mut AllocationN<T, C>,
-        capacity: CountN<C>,
-    ) -> Option<T> {
+    pub fn array_pop_last(allocation: &mut AllocationN<T, C>, count: &mut CountN<C>) -> Option<T> {
         if *count <= CountN::<C>::of(C::zero()) {
             return None;
         }
         let result = Some(
             allocation
-                .read_destructively(count.max_offset(), capacity)
+                .read_destructively(count.max_offset())
                 .expect("should be in bounds"),
         );
         *count -= C::one();
@@ -113,29 +100,19 @@ impl<T, C: SignedPrimitive> ArrayN<T, C> {
     }
 
     pub fn clear(&mut self, options: Clear) {
-        Self::array_clear(
-            options,
-            &mut self.count,
-            &mut self.allocation,
-            &mut self.capacity,
-        )
+        Self::array_clear(options, &mut self.allocation, &mut self.count)
     }
 
     #[inline]
-    pub fn array_clear(
-        options: Clear,
-        count: &mut CountN<C>,
-        allocation: &mut AllocationN<T, C>,
-        capacity: &mut CountN<C>,
-    ) {
+    pub fn array_clear(options: Clear, allocation: &mut AllocationN<T, C>, count: &mut CountN<C>) {
         match options {
             Clear::KeepCapacity => {
                 // We could optimize this but we do need Rust to drop each individual
                 // element (if necessary), so we can't just dealloc the `ptr` itself.
-                while let Some(_) = Self::array_pop_last(count, allocation, *capacity) {}
+                while let Some(_) = Self::array_pop_last(allocation, count) {}
             }
             Clear::DropCapacity => {
-                Self::array_mut_capacity(CountN::<C>::of(C::zero()), count, allocation, capacity)
+                Self::array_mut_capacity(CountN::<C>::of(C::zero()), allocation, count)
                     .expect("clearing should not alloc")
             }
         }
@@ -143,83 +120,69 @@ impl<T, C: SignedPrimitive> ArrayN<T, C> {
     }
 
     pub fn capacity(&self) -> CountN<C> {
-        return self.capacity;
+        return self.allocation.capacity();
     }
 
     /// Will reallocate to exactly this capacity.
     /// Will delete items if `new_capacity < self.count()`
     pub fn mut_capacity(&mut self, new_capacity: CountN<C>) -> Arrayed {
-        Self::array_mut_capacity(
-            new_capacity,
-            &mut self.count,
-            &mut self.allocation,
-            &mut self.capacity,
-        )
+        Self::array_mut_capacity(new_capacity, &mut self.allocation, &mut self.count)
     }
 
     #[inline]
     pub fn array_mut_capacity(
         new_capacity: CountN<C>,
-        count: &mut CountN<C>,
         allocation: &mut AllocationN<T, C>,
-        capacity: &mut CountN<C>,
+        count: &mut CountN<C>,
     ) -> Arrayed {
-        if new_capacity == *capacity {
+        if new_capacity == allocation.capacity() {
             return Ok(());
         }
         while *count > new_capacity {
             // We could optimize this but we do need Rust to drop each individual
             // element (if necessary), so we can't just dealloc the `ptr` itself.
-            if Self::array_pop_last(count, allocation, *capacity).is_none() {
+            if Self::array_pop_last(allocation, count).is_none() {
                 // Could happen if new_capacity < 0
                 break;
             }
         }
         allocation
-            .mut_capacity(capacity, new_capacity)
+            .mut_capacity(new_capacity)
             .map_err(|e| ArrayError::Allocation(e))
     }
 
     fn grow(&mut self) -> Arrayed {
-        Self::array_grow(&mut self.allocation, &mut self.capacity)
+        Self::array_grow(&mut self.allocation)
     }
 
     #[inline]
-    fn array_grow(allocation: &mut AllocationN<T, C>, capacity: &mut CountN<C>) -> Arrayed {
-        allocation
-            .grow(capacity)
-            .map_err(|e| ArrayError::Allocation(e))
+    fn array_grow(allocation: &mut AllocationN<T, C>) -> Arrayed {
+        allocation.grow().map_err(|e| ArrayError::Allocation(e))
     }
 }
 
 impl<T: std::default::Default, C: SignedPrimitive> ArrayN<T, C> {
     // TODO: this should be a Countable Trait
     pub fn mut_count(&mut self, new_count: CountN<C>) -> Arrayed {
-        Self::array_mut_count(
-            new_count,
-            &mut self.count,
-            &mut self.allocation,
-            &mut self.capacity,
-        )
+        Self::array_mut_count(new_count, &mut self.allocation, &mut self.count)
     }
 
     #[inline]
     pub fn array_mut_count(
         new_count: CountN<C>,
-        count: &mut CountN<C>,
         allocation: &mut AllocationN<T, C>,
-        capacity: &mut CountN<C>,
+        count: &mut CountN<C>,
     ) -> Arrayed {
         if new_count < *count {
             while *count > new_count {
-                _ = Self::array_pop_last(count, allocation, *capacity);
+                _ = Self::array_pop_last(allocation, count);
             }
         } else if new_count > *count {
-            if new_count > *capacity {
-                Self::array_mut_capacity(new_count, count, allocation, capacity)?;
+            if new_count > allocation.capacity() {
+                Self::array_mut_capacity(new_count, allocation, count)?;
             }
             while *count < new_count {
-                Self::array_push(Default::default(), count, allocation, capacity)
+                Self::array_push(Default::default(), allocation, count)
                     .expect("already allocated enough above");
             }
         }
@@ -230,13 +193,13 @@ impl<T: std::default::Default, C: SignedPrimitive> ArrayN<T, C> {
 impl<T, C: SignedPrimitive> std::ops::Deref for ArrayN<T, C> {
     type Target = [T];
     fn deref(&self) -> &[T] {
-        self.allocation.as_slice(self.count, self.capacity)
+        self.allocation.as_slice(self.count)
     }
 }
 
 impl<T, C: SignedPrimitive> std::ops::DerefMut for ArrayN<T, C> {
     fn deref_mut(&mut self) -> &mut [T] {
-        self.allocation.as_slice_mut(self.count, self.capacity)
+        self.allocation.as_slice_mut(self.count)
     }
 }
 

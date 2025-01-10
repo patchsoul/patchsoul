@@ -3,8 +3,8 @@ use crate::core::index::*;
 
 #[repr(C, packed)]
 struct Shtick {
-    count: Count16,
     short_or_long: ShortOrLong,
+    count: Count16,
 }
 
 impl Shtick {
@@ -51,7 +51,7 @@ impl Shtick {
 }
 
 union ShortOrLong {
-    short_buffer_continued: [u8; Shtick::SHORT16 as usize],
+    short_buffer: [u8; Shtick::SHORT16 as usize],
     allocation: std::mem::ManuallyDrop<Allocation16<u8>>,
 }
 

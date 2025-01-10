@@ -27,34 +27,46 @@ pub type Allocation16<T> = AllocationN<T, i16>;
 pub type Allocation8<T> = AllocationN<T, i8>;
 
 /// Low-level structure that has a pointer to contiguous memory.
-/// You need to keep track of which elements are initialized, etc.,
-/// as well as the capacity as `CountN<C>`.
+/// You need to keep track of which elements are initialized, etc.
 pub struct AllocationN<T, C: SignedPrimitive> {
-    count_type: PhantomData<C>,
     ptr: NonNull<T>,
+    capacity: CountN<C>,
 }
 
 impl<T, C: SignedPrimitive> AllocationN<T, C> {
     pub fn new() -> Self {
         Self {
-            count_type: PhantomData,
             ptr: NonNull::dangling(),
+            capacity: CountN::<C>::of(C::zero()),
         }
     }
 
-    /// Ensure that you've already dropped elements that you might delete here
+    pub fn capacity(&self) -> CountN<C> {
+        self.capacity
+    }
+
+    /// Caller MUST ensure that they've already dropped elements that you might delete here
     /// if the new capacity is less than the old.  The old capacity will be updated
     /// iff the capacity change succeeds.
-    pub fn mut_capacity(&mut self, capacity: &mut CountN<C>, new_capacity: CountN<C>) -> Allocated {
+    pub fn mut_capacity(&mut self, new_capacity: CountN<C>) -> Allocated {
+        Self::allocation_mut_capacity(new_capacity, &mut self.ptr, &mut self.capacity)
+    }
+
+    #[inline]
+    pub fn allocation_mut_capacity(
+        new_capacity: CountN<C>,
+        ptr: &mut NonNull<T>,
+        capacity: &mut CountN<C>,
+    ) -> Allocated {
         if new_capacity <= CountN::<C>::of(C::zero()) {
             if *capacity > CountN::<C>::of(C::zero()) {
                 unsafe {
                     alloc::dealloc(
-                        self.as_ptr_mut_u8(),
+                        ptr.as_ptr() as *mut u8,
                         Self::layout_of(*capacity).expect("already allocked"),
                     );
                 }
-                self.ptr = NonNull::dangling();
+                *ptr = NonNull::dangling();
                 *capacity = CountN::<C>::of(C::zero());
             }
             return Ok(());
@@ -67,7 +79,7 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
                 alloc::alloc(new_layout)
             } else {
                 alloc::realloc(
-                    self.as_ptr_mut_u8(),
+                    ptr.as_ptr() as *mut u8,
                     Self::layout_of(*capacity).expect("already allocked"),
                     new_layout.size(),
                 )
@@ -75,7 +87,7 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
         } as *mut T;
         match NonNull::new(new_ptr) {
             Some(new_ptr) => {
-                self.ptr = new_ptr;
+                *ptr = new_ptr;
                 *capacity = new_capacity;
                 return Ok(());
             }
@@ -86,39 +98,58 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
     }
 
     /// Writes to an offset that should not be considered initialized.
-    pub fn write_uninitialized(
-        &mut self,
-        value: T,
+    pub fn write_uninitialized(&self, offset: Offset, value: T) -> Allocated {
+        Self::allocation_write_uninitialized(offset, value, &self.ptr, self.capacity)
+    }
+
+    #[inline]
+    pub fn allocation_write_uninitialized(
         offset: Offset,
+        value: T,
+        ptr: &NonNull<T>,
         capacity: CountN<C>,
     ) -> Allocated {
         if !capacity.contains(offset) {
             return AllocationError::InvalidOffset.err();
         }
         unsafe {
-            ptr::write(self.ptr.as_ptr().add(offset as usize), value);
+            ptr::write(ptr.as_ptr().add(offset as usize), value);
         }
         Ok(())
     }
 
     /// Reads at the offset, and from now on, that offset should be considered
     /// uninitialized.
-    pub fn read_destructively(&self, offset: Offset, capacity: CountN<C>) -> AllocationResult<T> {
+    pub fn read_destructively(&self, offset: Offset) -> AllocationResult<T> {
+        Self::allocation_read_destructively(offset, &self.ptr, self.capacity)
+    }
+
+    #[inline]
+    pub fn allocation_read_destructively(
+        offset: Offset,
+        ptr: &NonNull<T>,
+        capacity: CountN<C>,
+    ) -> AllocationResult<T> {
         if !capacity.contains(offset) {
             return Err(AllocationError::InvalidOffset);
         }
-        Ok(unsafe { ptr::read(self.ptr.as_ptr().add(offset as usize)) })
+        Ok(unsafe { ptr::read(ptr.as_ptr().add(offset as usize)) })
     }
 
-    pub fn grow(&mut self, capacity: &mut CountN<C>) -> Allocated {
-        let desired_capacity = self.roughly_double_capacity(*capacity);
+    pub fn grow(&mut self) -> Allocated {
+        Self::allocation_grow(&mut self.ptr, &mut self.capacity)
+    }
+
+    #[inline]
+    pub fn allocation_grow(ptr: &mut NonNull<T>, capacity: &mut CountN<C>) -> Allocated {
+        let desired_capacity = Self::roughly_double_capacity(*capacity);
         if desired_capacity <= *capacity {
             return AllocationError::OutOfMemory.err();
         }
-        self.mut_capacity(capacity, desired_capacity)
+        Self::allocation_mut_capacity(desired_capacity, ptr, capacity)
     }
 
-    fn roughly_double_capacity(&self, capacity: CountN<C>) -> CountN<C> {
+    fn roughly_double_capacity(capacity: CountN<C>) -> CountN<C> {
         // TODO: determine starting_alloc based on sizeof(T), use at least 1,
         // maybe more if T is small.
         let starting_alloc = 2;
@@ -126,20 +157,29 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
     }
 
     /// Caller is responsible for 0 to count-1 (inclusive) being initialized.
-    pub fn as_slice(&self, count: CountN<C>, capacity: CountN<C>) -> &[T] {
+    pub fn as_slice(&self, count: CountN<C>) -> &[T] {
+        Self::allocation_as_slice(&self.ptr, count, self.capacity)
+    }
+
+    #[inline]
+    pub fn allocation_as_slice(ptr: &NonNull<T>, count: CountN<C>, capacity: CountN<C>) -> &[T] {
         assert!(count <= capacity);
-        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), count.into()) }
+        unsafe { std::slice::from_raw_parts(ptr.as_ptr(), count.into()) }
     }
 
     /// Caller is responsible for 0 to count-1 (inclusive) being initialized.
-    pub fn as_slice_mut(&self, count: CountN<C>, capacity: CountN<C>) -> &mut [T] {
-        assert!(count <= capacity);
-        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), count.into()) }
+    pub fn as_slice_mut(&self, count: CountN<C>) -> &mut [T] {
+        Self::allocation_as_slice_mut(&self.ptr, count, self.capacity)
     }
 
-    /// Caller is responsible for capacity being > 0
-    fn as_ptr_mut_u8(&mut self) -> *mut u8 {
-        return self.ptr.as_ptr() as *mut u8;
+    #[inline]
+    pub fn allocation_as_slice_mut(
+        ptr: &NonNull<T>,
+        count: CountN<C>,
+        capacity: CountN<C>,
+    ) -> &mut [T] {
+        assert!(count <= capacity);
+        unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), count.into()) }
     }
 
     fn layout_of(capacity: CountN<C>) -> AllocationResult<alloc::Layout> {
