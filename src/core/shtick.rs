@@ -1,7 +1,9 @@
+use crate::core::index::*;
+
 [repr(C, packed)]
 struct Shtick {
-    count: u16,
-    short_buffer: [u8; 14],
+    count: Count16,
+    short_buffer: [u8; 6],
 }
 
 impl Shtick {

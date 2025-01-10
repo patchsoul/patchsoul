@@ -21,34 +21,36 @@ impl AllocationError {
 
 /// Low-level structure that has a pointer to contiguous memory and some capacity.
 /// You need to keep track of which elements are initialized, etc.
-// TODO: add a CountN template type.
-pub struct Allocation<T> {
-    capacity: Count,
+pub type Allocation<T> = AllocationN<T, i64>;
+
+#[repr(C)]
+pub struct AllocationN<T, C: SignedPrimitive> {
+    capacity: CountN<C>,
     ptr: NonNull<T>,
 }
 
-impl<T> Allocation<T> {
+impl<T, C: SignedPrimitive> AllocationN<T, C> {
     pub fn new() -> Self {
         Self {
-            capacity: Count::of(0),
+            capacity: CountN::<C>::default(),
             ptr: NonNull::dangling(),
         }
     }
 
-    pub fn capacity(&self) -> Count {
+    pub fn capacity(&self) -> CountN<C> {
         return self.capacity;
     }
 
     /// Ensure that you've already dropped elements that you might delete here
     /// if the new capacity is less than the old.
-    pub fn mut_capacity(&mut self, new_capacity: Count) -> Allocated {
-        if new_capacity <= Count::of(0) {
-            if self.capacity() > Count::of(0) {
+    pub fn mut_capacity(&mut self, new_capacity: CountN<C>) -> Allocated {
+        if new_capacity <= CountN::<C>::of(C::zero()) {
+            if self.capacity() > CountN::<C>::of(C::zero()) {
                 unsafe {
                     alloc::dealloc(self.as_ptr_mut_u8(), self.layout());
                 }
                 self.ptr = NonNull::dangling();
-                self.capacity = Count::of(0);
+                self.capacity = CountN::<C>::of(C::zero());
             }
             return Ok(());
         } else if new_capacity == self.capacity {
@@ -56,7 +58,7 @@ impl<T> Allocation<T> {
         }
         let new_layout = Self::layout_of(new_capacity)?;
         let new_ptr = unsafe {
-            if self.capacity == Count::of(0) {
+            if self.capacity == CountN::<C>::of(C::zero()) {
                 alloc::alloc(new_layout)
             } else {
                 alloc::realloc(self.as_ptr_mut_u8(), self.layout(), new_layout.size())
@@ -102,7 +104,7 @@ impl<T> Allocation<T> {
         self.mut_capacity(desired_capacity)
     }
 
-    fn roughly_double_capacity(&self) -> Count {
+    fn roughly_double_capacity(&self) -> CountN<C> {
         // TODO: determine starting_alloc based on sizeof(T), use at least 1,
         // maybe more if T is small.
         let starting_alloc = 2;
@@ -110,7 +112,7 @@ impl<T> Allocation<T> {
     }
 
     pub fn as_ptr(&self) -> *mut T {
-        assert!(self.capacity > Count::of(0));
+        assert!(self.capacity > CountN::<C>::of(C::zero()));
         self.ptr.as_ptr()
     }
 
@@ -122,7 +124,7 @@ impl<T> Allocation<T> {
         return Self::layout_of(self.capacity).unwrap();
     }
 
-    fn layout_of(capacity: Count) -> AllocationResult<alloc::Layout> {
+    fn layout_of(capacity: CountN<C>) -> AllocationResult<alloc::Layout> {
         alloc::Layout::array::<T>(capacity.into()).or(Err(AllocationError::OutOfMemory))
     }
 
