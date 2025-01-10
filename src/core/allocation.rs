@@ -29,7 +29,6 @@ pub type Allocation8<T> = AllocationN<T, i8>;
 /// Low-level structure that has a pointer to contiguous memory.
 /// You need to keep track of which elements are initialized, etc.,
 /// as well as the capacity as `CountN<C>`.
-#[repr(C)]
 pub struct AllocationN<T, C: SignedPrimitive> {
     count_type: PhantomData<C>,
     ptr: NonNull<T>,
