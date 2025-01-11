@@ -1,3 +1,6 @@
+pub mod aligned;
+pub use aligned::*;
+
 pub mod allocation;
 pub use allocation::*;
 

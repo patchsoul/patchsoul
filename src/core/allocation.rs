@@ -1,7 +1,6 @@
 use crate::core::index::*;
 
 use std::alloc;
-use std::marker::PhantomData;
 use std::ptr::{self, NonNull};
 
 #[derive(Eq, PartialEq, Copy, Clone, Default, Debug, Hash)]
@@ -30,6 +29,8 @@ pub type Allocation8<T> = AllocationN<T, i8>;
 /// You need to keep track of which elements are initialized, etc.
 /// Because of that, you need to MANUALLY drop this allocation after
 /// freeing any initialized elements, by calling `mut_capacity(Count::of(0))`
+/// WARNING! because this is packed, you may need to wrap it in `Aligned(...)`
+/// in order to ensure that `ptr` is on an aligned boundary.
 #[repr(C, packed)]
 pub struct AllocationN<T, C: SignedPrimitive> {
     ptr: NonNull<T>,
@@ -198,13 +199,14 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
 
     fn as_ptr(&self) -> &NonNull<T> {
         let ptr = std::ptr::addr_of!(self.ptr);
-        assert!((ptr as usize) % 8 == 0);
+        assert_eq!((ptr as usize) % 8, 0);
         unsafe { &*ptr }
     }
 
     fn as_ptr_mut(&mut self) -> &mut NonNull<T> {
         let ptr = std::ptr::addr_of_mut!(self.ptr);
-        assert!((ptr as usize) % 8 == 0);
+        assert_eq!((std::ptr::addr_of!(*self) as usize) % 8, 0);
+        assert_eq!((ptr as usize) % 8, 0);
         unsafe { &mut *ptr }
     }
 }
@@ -221,4 +223,12 @@ unsafe impl<T: Sync> Sync for Allocation<T> {}
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn allocation_internal_offsets() {
+        let allocation = Allocation::<u8>::new();
+        let allocation_ptr = std::ptr::addr_of!(allocation);
+        let ptr_ptr = std::ptr::addr_of!(allocation.ptr);
+        assert_eq!(ptr_ptr as usize, allocation_ptr as usize);
+    }
 }
