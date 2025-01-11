@@ -17,13 +17,12 @@ pub type Count32 = CountN<i32>;
 pub type Count16 = CountN<i16>;
 pub type Count8 = CountN<i8>;
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
-pub struct CountN<T: SignedPrimitive>(T);
-
 /// Internally represents the i64 as the *negative* of the count,
 /// so that we can have representable indices up to that value.
 /// E.g., for an i8, Index(127) is valid, but Count::of(127) would not be large enough
 /// to consider Index(127) as valid, so we represent a count of 128 as Count::of(-128).
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
+pub struct CountN<T: SignedPrimitive>(T);
 
 impl<T> CountN<T>
 where
@@ -32,6 +31,18 @@ where
     pub const MAX: Self = Self(T::MIN);
     pub const MAX_USIZE: usize = T::MAX_USIZE;
     const TWO: T = T::TWO;
+
+    /// Prefer `Count::of(123)` to get a count of 123, but you can use
+    /// `Count::negated(-123)` for the same result.
+    pub fn negated(value: T) -> Self {
+        assert!(value <= T::ZERO);
+        Self(value)
+    }
+
+    /// Returns the negative of this `Count`.
+    pub fn as_negated(self) -> T {
+        return self.0;
+    }
 
     pub fn of(value: T) -> Self {
         assert!(value >= T::ZERO);
@@ -42,8 +53,19 @@ where
         if value > Self::MAX_USIZE {
             Err(CountError::TooHigh)
         } else {
+            // TODO: do we need to do `-((value - 1) as i64) - 1` to safely wrap?
             Ok(Self(T::from(-(value as i64)).unwrap()))
         }
+    }
+
+    pub fn min(self, other: Self) -> Self {
+        // Because we're negated, min is max.
+        Self(self.0.max(other.0))
+    }
+
+    pub fn max(self, other: Self) -> Self {
+        // Because we're negated, max is min.
+        Self(self.0.min(other.0))
     }
 
     /// Returns `clamp(2 * self, min_value, MAX)`.

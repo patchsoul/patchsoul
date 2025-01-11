@@ -1,20 +1,19 @@
 use crate::core::allocation::*;
 use crate::core::index::*;
 
+pub type ArrayResult<T> = Result<T, ArrayError>;
+pub type Arrayed = ArrayResult<()>;
+
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
 pub enum ArrayError {
     Allocation(AllocationError),
-    InvalidCount,
 }
 
 impl std::default::Default for ArrayError {
     fn default() -> Self {
-        return ArrayError::Allocation(AllocationError::OutOfMemory);
+        return Self::Allocation(AllocationError::OutOfMemory);
     }
 }
-
-pub type ArrayResult<T> = Result<T, ArrayError>;
-pub type Arrayed = ArrayResult<()>;
 
 impl ArrayError {
     pub fn err(self) -> Arrayed {

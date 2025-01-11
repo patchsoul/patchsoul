@@ -28,6 +28,8 @@ pub type Allocation8<T> = AllocationN<T, i8>;
 
 /// Low-level structure that has a pointer to contiguous memory.
 /// You need to keep track of which elements are initialized, etc.
+/// Because of that, you need to MANUALLY drop this allocation after
+/// freeing any initialized elements, by calling `mut_capacity(Count::of(0))`
 #[repr(C, packed)]
 pub struct AllocationN<T, C: SignedPrimitive> {
     ptr: NonNull<T>,
@@ -207,7 +209,7 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
     }
 }
 
-impl<T> Default for Allocation<T> {
+impl<T, C: SignedPrimitive> Default for AllocationN<T, C> {
     fn default() -> Self {
         return Self::new();
     }
