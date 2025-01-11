@@ -151,12 +151,8 @@ impl<T, C: SignedPrimitive> ArrayN<T, C> {
             .map_err(|e| ArrayError::Allocation(e))
     }
 
-    fn grow(&mut self) -> Arrayed {
-        Self::array_grow(&mut self.allocation)
-    }
-
     #[inline]
-    fn array_grow(allocation: &mut AllocationN<T, C>) -> Arrayed {
+    pub fn array_grow(allocation: &mut AllocationN<T, C>) -> Arrayed {
         allocation.grow().map_err(|e| ArrayError::Allocation(e))
     }
 }
