@@ -28,6 +28,7 @@ pub type Allocation8<T> = AllocationN<T, i8>;
 
 /// Low-level structure that has a pointer to contiguous memory.
 /// You need to keep track of which elements are initialized, etc.
+#[repr(C, packed)]
 pub struct AllocationN<T, C: SignedPrimitive> {
     ptr: NonNull<T>,
     capacity: CountN<C>,
@@ -49,7 +50,11 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
     /// if the new capacity is less than the old.  The old capacity will be updated
     /// iff the capacity change succeeds.
     pub fn mut_capacity(&mut self, new_capacity: CountN<C>) -> Allocated {
-        Self::allocation_mut_capacity(new_capacity, &mut self.ptr, &mut self.capacity)
+        // To get around alignment (and double borrowing) issues, just grab it and update it.
+        let mut capacity = self.capacity;
+        let result = Self::allocation_mut_capacity(new_capacity, self.as_ptr_mut(), &mut capacity);
+        self.capacity = capacity;
+        result
     }
 
     #[inline]
@@ -99,7 +104,7 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
 
     /// Writes to an offset that should not be considered initialized.
     pub fn write_uninitialized(&self, offset: Offset, value: T) -> Allocated {
-        Self::allocation_write_uninitialized(offset, value, &self.ptr, self.capacity)
+        Self::allocation_write_uninitialized(offset, value, &self.as_ptr(), self.capacity)
     }
 
     #[inline]
@@ -121,7 +126,7 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
     /// Reads at the offset, and from now on, that offset should be considered
     /// uninitialized.
     pub fn read_destructively(&self, offset: Offset) -> AllocationResult<T> {
-        Self::allocation_read_destructively(offset, &self.ptr, self.capacity)
+        Self::allocation_read_destructively(offset, &self.as_ptr(), self.capacity)
     }
 
     #[inline]
@@ -137,7 +142,10 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
     }
 
     pub fn grow(&mut self) -> Allocated {
-        Self::allocation_grow(&mut self.ptr, &mut self.capacity)
+        let mut capacity = self.capacity;
+        let result = Self::allocation_grow(self.as_ptr_mut(), &mut capacity);
+        self.capacity = capacity;
+        result
     }
 
     #[inline]
@@ -158,7 +166,7 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
 
     /// Caller is responsible for 0 to count-1 (inclusive) being initialized.
     pub fn as_slice(&self, count: CountN<C>) -> &[T] {
-        Self::allocation_as_slice(&self.ptr, count, self.capacity)
+        Self::allocation_as_slice(self.as_ptr(), count, self.capacity)
     }
 
     #[inline]
@@ -169,7 +177,7 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
 
     /// Caller is responsible for 0 to count-1 (inclusive) being initialized.
     pub fn as_slice_mut(&self, count: CountN<C>) -> &mut [T] {
-        Self::allocation_as_slice_mut(&self.ptr, count, self.capacity)
+        Self::allocation_as_slice_mut(self.as_ptr(), count, self.capacity)
     }
 
     #[inline]
@@ -184,6 +192,18 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
 
     fn layout_of(capacity: CountN<C>) -> AllocationResult<alloc::Layout> {
         alloc::Layout::array::<T>(capacity.into()).or(Err(AllocationError::OutOfMemory))
+    }
+
+    fn as_ptr(&self) -> &NonNull<T> {
+        let ptr = std::ptr::addr_of!(self.ptr);
+        assert!((ptr as usize) % 8 == 0);
+        unsafe { &*ptr }
+    }
+
+    fn as_ptr_mut(&mut self) -> &mut NonNull<T> {
+        let ptr = std::ptr::addr_of_mut!(self.ptr);
+        assert!((ptr as usize) % 8 == 0);
+        unsafe { &mut *ptr }
     }
 }
 

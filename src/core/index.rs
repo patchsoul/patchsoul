@@ -34,7 +34,7 @@ where
     const TWO: T = T::TWO;
 
     pub fn of(value: T) -> Self {
-        assert!(value >= T::zero());
+        assert!(value >= T::ZERO);
         Self(-value)
     }
 
@@ -86,30 +86,35 @@ pub trait SignedPrimitive:
     const MAX_USIZE: usize;
     const MAX: Self;
     const TWO: Self;
+    const ZERO: Self;
 }
 impl SignedPrimitive for i64 {
     const MIN: Self = i64::MIN;
     const MAX_USIZE: usize = (-(i64::MIN + 1)) as usize + 1;
     const MAX: Self = i64::MAX;
     const TWO: Self = 2;
+    const ZERO: Self = 0;
 }
 impl SignedPrimitive for i32 {
     const MIN: Self = i32::MIN;
     const MAX_USIZE: usize = (-(i32::MIN + 1)) as usize + 1;
     const MAX: Self = i32::MAX;
     const TWO: Self = 2;
+    const ZERO: Self = 0;
 }
 impl SignedPrimitive for i16 {
     const MIN: Self = i16::MIN;
     const MAX_USIZE: usize = (-(i16::MIN + 1)) as usize + 1;
     const MAX: Self = i16::MAX;
     const TWO: Self = 2;
+    const ZERO: Self = 0;
 }
 impl SignedPrimitive for i8 {
     const MIN: Self = i8::MIN;
     const MAX_USIZE: usize = (-(i8::MIN + 1)) as usize + 1;
     const MAX: Self = i8::MAX;
     const TWO: Self = 2;
+    const ZERO: Self = 0;
 }
 
 impl<T: SignedPrimitive> std::default::Default for CountN<T> {

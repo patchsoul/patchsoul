@@ -1,4 +1,5 @@
 use crate::core::allocation::*;
+use crate::core::array::*;
 use crate::core::index::*;
 
 #[repr(C, packed)]
@@ -9,27 +10,29 @@ struct Shtick {
 
 impl Shtick {
     const SHORT16: i16 = 14;
-    pub const SHORT_COUNT: Count16 = Count16::of(Self::SHORT16);
+    fn short_count() -> Count16 {
+        Count16::of(Self::SHORT16)
+    }
 
     pub fn new() -> Self {
         Self {
-            count: Count16::of(0),
-            short_buffer_start: [u8; Shtick::SHORT16 as usize],
             short_or_long: ShortOrLong {
                 short_buffer: [0; Self::SHORT16 as usize],
             },
+            count: Count16::of(0),
         }
     }
 
     pub fn is_short(&self) -> bool {
-        self.count < Self::SHORT_COUNT
+        let count = self.count;
+        count < Self::short_count()
     }
 
     pub fn capacity(&self) -> Count16 {
         if let Some(allocation) = self.get_allocation() {
             allocation.capacity()
         } else {
-            Self::SHORT_COUNT
+            Self::short_count()
         }
     }
 
@@ -37,7 +40,9 @@ impl Shtick {
         if self.is_short() {
             None
         } else {
-            Some(unsafe { &self.short_or_long.allocation })
+            let ptr = unsafe { std::ptr::addr_of!(self.short_or_long.allocation) };
+            assert!((ptr as usize) % 8 == 0);
+            Some(unsafe { &*ptr })
         }
     }
 
@@ -45,11 +50,14 @@ impl Shtick {
         if self.is_short() {
             None
         } else {
-            Some(unsafe { &mut self.short_or_long.allocation })
+            let ptr = unsafe { std::ptr::addr_of_mut!(self.short_or_long.allocation) };
+            assert!((ptr as usize) % 8 == 0);
+            Some(unsafe { &mut *ptr })
         }
     }
 }
 
+#[repr(C, packed)]
 union ShortOrLong {
     short_buffer: [u8; Shtick::SHORT16 as usize],
     allocation: std::mem::ManuallyDrop<Allocation16<u8>>,
@@ -62,6 +70,11 @@ union ShortOrLong {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn size_of_short_or_long() {
+        assert_eq!(std::mem::size_of::<ShortOrLong>(), 14);
+    }
 
     #[test]
     fn size_of_shtick() {
