@@ -1,0 +1,33 @@
+* vim-like bindings (see PyanoH3ro)
+* tracker but with note push and note hold functionality
+    * step: "smallest" resolution of a note -- you can push early but can't add more notes than steps
+    * pitch(i8): measured from A4
+    * delta-pitch(desired, steps)
+        * desired: i8, desired pitch
+        * steps: u8, number of steps before we get from the current to the desired pitch
+    * note(push, fine-hold, hold, length)
+        * push: i8, negative starts the note early, positive means start it late
+            * +-120 is a full step ahead/behind
+        * fine-hold: i8, negative makes it staccato, positive makes it longer
+            * +-120 is a full step added/removed
+        * hold: u8, in steps.
+            * amount of time to hold the note
+        * length: u8, in steps = hold + wait
+            * amount of time before we play the next note
+        * [derived] wait: u8, in steps = length - hold
+            * amount of time to wait after holding the note before we play the next
+    * volume(u8)
+    * delta-volume(desired, steps)
+        * desired: u8, desired volume
+        * steps: u8, number of steps before we get from the current to the desired volume
+* instruments
+    * 
+* save format
+    * tracks
+        X: track{
+          0:note(...)
+          ...
+        999:note(...)
+        }
+    * instruments
+
