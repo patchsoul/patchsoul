@@ -7,10 +7,23 @@
             which determines which oscillators should play
             * we'll need to try and converge phases when the pitch is the same
                 for all oscillators, otherwise we could have destructive interference
+    * 256 allowed instruments, but each player only has access to 5 at a time
+        * each player has an instrument mapper,
+            so player instrument 1 could correspond to global instrument 3, etc.
+        * player instrument mapper can be adjusted in section commands.
 * track commands
+    * instrument(Inst): sets the instrument 
+        * inst Of(0-4): pick that instrument
+        * inst Mask(Mask_inst): where Mask_inst is 5 bits, one for each instrument
+            we randomly pick an instrument from bit-masked instruments
+            internally represented as u8(8 + (Mask_inst << 3)))
+    * Mask: common field to most track commands.
+        * 0-7: oscillator mask, e.g., 1 = oscillator 1, 2 = osc 2, 4 = osc 3, 6 = osc 2 and osc 3
+        * 8-11: randomize, pick single oscillator, from 12, 23, 31, or 123
+        * 12: randomize, pick two oscillators, from 123
     * pitch(Rel, Mask: All): sets the pitch for the oscillators
         * Rel: i8, measured from the current scale's "center note" (e.g., A4 - G4)
-        * Mask: u3 - affects pitch for which oscillators
+        * Mask: affects pitch for which oscillators
     * pitch_delta(Rel_desired, Steps, Mask: All)
         * Rel_desired: i8, desired pitch, relative to the current scale's "center note"
         * Steps: u8, number of steps before we get from the current to the desired pitch
@@ -24,7 +37,7 @@
                 * +-120 is a full step added/removed
                 * holding can add to note push.
         * mode apreggio(Arp): do arpeggios while the note is `On`, Arp an enum:
-            * arp 
+            * Arp047Z: major arpeggio (1, maj 3, 5, 8)
     * note(On, Off, Push: 0, Mask: All)
         * On: u8, in steps.
             * amount of time to hold the note
@@ -38,11 +51,11 @@
         * Steps: u8, number of steps to rest for
     * volume(Vol, Mask: All)
         * Vol: u8, maps logarithmically to a float amplitude (0 -> 0.0, 255 -> 1.0)
-        * ln(1.0 + (E - 1.0) * (Vol / 255.0))   where Vol is 0-255 and E = 2.71828...
+        * ln(1.0 + (E - 1.0) * (Vol / 255.0)) where E = 2.71828...
     * volume_delta(Vol_desired, Steps, Mask: All)
         * Vol_desired: u8, desired volume after steps
         * Steps: u8, number of steps before we get to the desired volume
-* instruments
+* instrument commands
     * 
 * save format
     * tracks
