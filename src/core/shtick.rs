@@ -169,6 +169,25 @@ impl Shtick {
 
     // TODO: `pub fn mut_count(&mut self, new_count: Count16)` should fill larger space with zeros.
 
+    pub fn push(&mut self, value: char) -> Shticked {
+        let count = self.count();
+        let needed_count = Count16::from_usize(count.as_usize() + value.len_utf8())
+            .map_err(|_| ShtickError::TooLarge)?;
+        let capacity = self.capacity();
+        if needed_count >= capacity {
+            self.mut_capacity(if self.is_unallocated() {
+                // We were at capacity of 14, could go to 28, but let's do 32.
+                Count16::of(Self::SHORT_NEXT_POWER_OF_2 * 2)
+            } else {
+                capacity + capacity
+            })?;
+            assert!(self.capacity() >= needed_count);
+        }
+        value.encode_utf8(&mut self.as_slice_mut()[count.into()..needed_count.into()]);
+        self.mut_just_count(needed_count);
+        Ok(())
+    }
+
     /// Returns the number of bytes that are available to this Shtick.
     pub fn capacity(&self) -> Count16 {
         if let Some(allocation) = self.allocation() {
@@ -343,9 +362,6 @@ mod test {
     }
 
     #[test]
-    fn shtick() {}
-
-    #[test]
     fn shtick_internal_offsets() {
         let shtick = Shtick::new();
         let shtick_ptr = std::ptr::addr_of!(shtick);
@@ -405,5 +421,46 @@ mod test {
             debug_string,
         );
         eprintln!("done debug: \"{}\"", string);
+    }
+
+    #[test]
+    fn shtick_push_ascii() {
+        let mut shtick = Shtick::or_die("hello, world!!");
+        assert_eq!(shtick.count(), Count16::of(14));
+        assert!(shtick.is_unallocated());
+
+        shtick.push('?').expect("ok");
+        assert!(shtick.is_allocated());
+        assert_eq!(shtick.count(), Count16::of(15));
+        assert_eq!(shtick.capacity(), Count16::of(32)); // also testing that we jump a bit here.
+        assert_eq!(shtick.deref(), "hello, world!!?".as_bytes());
+
+        shtick.push('@').expect("ok");
+        assert_eq!(shtick.count(), Count16::of(16));
+        assert_eq!(shtick.deref(), "hello, world!!?@".as_bytes());
+    }
+
+    #[test]
+    fn shtick_push_unicode() {
+        let mut shtick = Shtick::or_die("this will be allocated");
+        shtick.mut_capacity(Count16::of(28)); // test that the last capacity change will be ok.
+        assert_eq!(shtick.count(), Count16::of(22));
+        assert!(shtick.is_allocated());
+
+        shtick.push('ß').expect("ok"); // 2 bytes
+        assert_eq!(shtick.count(), Count16::of(24));
+        assert!(shtick.is_allocated());
+        assert_eq!(shtick.deref(), "this will be allocatedß".as_bytes());
+
+        shtick.push('東').expect("ok"); // 3 bytes
+        assert_eq!(shtick.count(), Count16::of(27));
+        assert!(shtick.is_allocated());
+        assert_eq!(shtick.deref(), "this will be allocatedß東".as_bytes());
+
+        shtick.push('𓄇').expect("ok"); // 4 bytes, should trigger size increase
+        assert_eq!(shtick.capacity(), Count16::of(56)); // 2 * 28
+        assert_eq!(shtick.count(), Count16::of(31));
+        assert!(shtick.is_allocated());
+        assert_eq!(shtick.deref(), "this will be allocatedß東𓄇".as_bytes());
     }
 }
