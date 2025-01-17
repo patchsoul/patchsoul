@@ -167,32 +167,6 @@ impl<T, C: SignedPrimitive> AllocationN<T, C> {
         capacity.double_or_max(starting_alloc)
     }
 
-    /// Caller is responsible for 0 to count-1 (inclusive) being initialized.
-    pub fn as_slice(&self, count: CountN<C>) -> &[T] {
-        Self::allocation_as_slice(self.as_ptr(), count, self.capacity)
-    }
-
-    #[inline]
-    pub fn allocation_as_slice(ptr: &NonNull<T>, count: CountN<C>, capacity: CountN<C>) -> &[T] {
-        assert!(count <= capacity);
-        unsafe { std::slice::from_raw_parts(ptr.as_ptr(), count.into()) }
-    }
-
-    /// Caller is responsible for 0 to count-1 (inclusive) being initialized.
-    pub fn as_slice_mut(&self, count: CountN<C>) -> &mut [T] {
-        Self::allocation_as_slice_mut(self.as_ptr(), count, self.capacity)
-    }
-
-    #[inline]
-    pub fn allocation_as_slice_mut(
-        ptr: &NonNull<T>,
-        count: CountN<C>,
-        capacity: CountN<C>,
-    ) -> &mut [T] {
-        assert!(count <= capacity);
-        unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), count.into()) }
-    }
-
     fn layout_of(capacity: CountN<C>) -> AllocationResult<alloc::Layout> {
         alloc::Layout::array::<T>(capacity.into()).or(Err(AllocationError::OutOfMemory))
     }
@@ -217,6 +191,21 @@ impl<T, C: SignedPrimitive> Default for AllocationN<T, C> {
     }
 }
 
+impl<T, C: SignedPrimitive> std::ops::Deref for AllocationN<T, C> {
+    type Target = [T];
+    /// Caller is responsible for only accessing initialized values.
+    fn deref(&self) -> &[T] {
+        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.capacity.into()) }
+    }
+}
+
+impl<T, C: SignedPrimitive> std::ops::DerefMut for AllocationN<T, C> {
+    /// Caller is responsible for only accessing initialized values.
+    fn deref_mut(&mut self) -> &mut [T] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.capacity.into()) }
+    }
+}
+
 unsafe impl<T: Send> Send for Allocation<T> {}
 unsafe impl<T: Sync> Sync for Allocation<T> {}
 
@@ -224,11 +213,24 @@ unsafe impl<T: Sync> Sync for Allocation<T> {}
 mod test {
     use super::*;
 
+    use std::ops::{Deref, DerefMut};
+
     #[test]
     fn allocation_internal_offsets() {
         let allocation = Allocation::<u8>::new();
         let allocation_ptr = std::ptr::addr_of!(allocation);
         let ptr_ptr = std::ptr::addr_of!(allocation.ptr);
         assert_eq!(ptr_ptr as usize, allocation_ptr as usize);
+    }
+
+    #[test]
+    fn allocation_deref() {
+        // We can be a bit more nonchalant here because u8s don't need to be initialized.
+        let mut allocation = Allocation::<u8>::new();
+        allocation.mut_capacity(Count::of(13)).expect("small alloc");
+        allocation
+            .deref_mut()
+            .copy_from_slice("hello, world!".as_bytes());
+        assert_eq!(allocation.deref(), "hello, world!".as_bytes());
     }
 }

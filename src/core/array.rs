@@ -9,12 +9,6 @@ pub enum ArrayError {
     Allocation(AllocationError),
 }
 
-impl std::default::Default for ArrayError {
-    fn default() -> Self {
-        return Self::Allocation(AllocationError::OutOfMemory);
-    }
-}
-
 impl ArrayError {
     pub fn err(self) -> Arrayed {
         return Err(self);
@@ -30,6 +24,7 @@ pub type Array8<T> = ArrayN<T, i8>;
 /// Low-level structure that has a pointer to contiguous memory.
 /// You need to keep track of which elements are initialized, etc.,
 /// as well as the capacity as `CountN<C>`.
+#[repr(align(8))]
 pub struct ArrayN<T, C: SignedPrimitive> {
     allocation: AllocationN<T, C>,
     count: CountN<C>,
@@ -188,13 +183,13 @@ impl<T: std::default::Default, C: SignedPrimitive> ArrayN<T, C> {
 impl<T, C: SignedPrimitive> std::ops::Deref for ArrayN<T, C> {
     type Target = [T];
     fn deref(&self) -> &[T] {
-        self.allocation.as_slice(self.count)
+        &self.allocation[0..self.count.into()]
     }
 }
 
 impl<T, C: SignedPrimitive> std::ops::DerefMut for ArrayN<T, C> {
     fn deref_mut(&mut self) -> &mut [T] {
-        self.allocation.as_slice_mut(self.count)
+        &mut self.allocation[0..self.count.into()]
     }
 }
 

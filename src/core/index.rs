@@ -5,11 +5,16 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 pub type Offset = i64;
 
-#[derive(Debug)]
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
 pub enum CountError {
     TooHigh,
     NonPositive,
+    OutOfBounds,
+    UnknownCount,
 }
+
+pub type CountResult<T> = Result<T, CountError>;
+pub type Counted = CountResult<()>;
 
 pub type Count = Count64;
 pub type Count64 = CountN<i64>;
@@ -87,6 +92,11 @@ where
         // This should always be representable, e.g., for an i8
         // the max count is 128, held as [-128] in self.0, so -([-128] + 1) is 127.
         -(self.0.to_i64().unwrap() + 1)
+    }
+
+    pub fn as_usize(self) -> usize {
+        assert!(self.0 <= T::zero());
+        (Wrapping(self.max_offset()) + Wrapping(1)).0 as usize
     }
 }
 
@@ -219,8 +229,7 @@ impl<T: SignedPrimitive> SubAssign<Self> for CountN<T> {
 
 impl<T: SignedPrimitive> Into<usize> for CountN<T> {
     fn into(self) -> usize {
-        assert!(self.0 <= T::zero());
-        (Wrapping(self.max_offset()) + Wrapping(1)).0 as usize
+        self.as_usize()
     }
 }
 

@@ -27,9 +27,9 @@ impl std::default::Default for ShtickError {
 #[repr(C, align(8))]
 pub struct Shtick {
     /// Invariants:
-    ///   * If allocated, then `maybe_allocated.allocation.capacity() > Self::unallocated_max_count()`
+    ///   * If allocated, then `maybe_allocated.allocation.capacity() > Self::max_unallocated_count()`
     /// Not invariants:
-    ///   * If allocated, `Shtick.count()` can be less than `Self::unallocated_max_count()`.
+    ///   * If allocated, `Shtick.count()` can be less than `Self::max_unallocated_count()`.
     ///     This is to ensure that we can increase capacity and *then* increase the size of the `Shtick`.
     ///     We do this using `special_count` to distinguish between allocated/unallocated.
     maybe_allocated: MaybeAllocated,
@@ -41,26 +41,27 @@ pub struct Shtick {
 #[repr(C, packed)]
 union MaybeAllocated {
     /// No heap allocations, just a buffer.
-    unallocated_buffer: [u8; Shtick::SHORT16 as usize],
+    unallocated_buffer: [u8; Shtick::UNALLOCATED16 as usize],
     /// Heap allocation, pointer to a buffer.
     allocation: std::mem::ManuallyDrop<Allocation16<u8>>,
 }
 
 impl Shtick {
-    const SHORT16: i16 = 14;
+    const UNALLOCATED16: i16 = 14;
+    const SHORT_NEXT_POWER_OF_2: i16 = 16;
     /// We have an offset to ensure we can distinguish
     /// an unallocated Shtick from an allocated one.
     /// See documentation on `special_count`.
     const UNALLOCATED_ZERO_SPECIAL_COUNT: i16 = 1;
 
-    fn unallocated_max_count() -> Count16 {
-        Count16::of(Self::SHORT16)
+    fn max_unallocated_count() -> Count16 {
+        Count16::of(Self::UNALLOCATED16)
     }
 
     pub fn new() -> Self {
         Self {
             maybe_allocated: MaybeAllocated {
-                unallocated_buffer: [0; Self::SHORT16 as usize],
+                unallocated_buffer: [0; Self::UNALLOCATED16 as usize],
             },
             special_count: Self::UNALLOCATED_ZERO_SPECIAL_COUNT,
         }
@@ -77,7 +78,7 @@ impl Shtick {
         if special_count < Self::UNALLOCATED_ZERO_SPECIAL_COUNT {
             true
         } else {
-            assert!(special_count - Self::UNALLOCATED_ZERO_SPECIAL_COUNT <= Self::SHORT16);
+            assert!(special_count - Self::UNALLOCATED_ZERO_SPECIAL_COUNT <= Self::UNALLOCATED16);
             false
         }
     }
@@ -86,25 +87,29 @@ impl Shtick {
         !self.is_allocated()
     }
 
-    pub fn as_slice(&self) -> &[u8] {
+    /// Encompasses the full allocated range, not public because there's no
+    /// good way to set `count` without erasing any added data after updating this slice.
+    fn as_slice(&self) -> &[u8] {
         if self.is_allocated() {
             let ptr = unsafe { std::ptr::addr_of!(self.maybe_allocated.allocation) };
             let ptr = unsafe { &*ptr };
-            ptr.as_slice(self.count_allocated())
+            ptr.deref()
         } else {
             let ptr = unsafe { std::ptr::addr_of!(self.maybe_allocated.unallocated_buffer[0]) };
-            unsafe { std::slice::from_raw_parts(ptr, self.count_unallocated().into()) }
+            unsafe { std::slice::from_raw_parts(ptr, Self::max_unallocated_count().into()) }
         }
     }
 
-    pub fn as_slice_mut(&mut self) -> &mut [u8] {
+    /// Encompasses the full allocated range, not public because there's no
+    /// good way to set `count` without erasing any added data after updating this slice.
+    fn as_slice_mut(&mut self) -> &mut [u8] {
         if self.is_allocated() {
-            let ptr = unsafe { std::ptr::addr_of!(self.maybe_allocated.allocation) };
-            let ptr = unsafe { &*ptr };
-            ptr.as_slice_mut(self.count_allocated())
+            let ptr = unsafe { std::ptr::addr_of_mut!(self.maybe_allocated.allocation) };
+            let ptr = unsafe { &mut *ptr };
+            ptr.deref_mut()
         } else {
             let ptr = unsafe { std::ptr::addr_of_mut!(self.maybe_allocated.unallocated_buffer[0]) };
-            unsafe { std::slice::from_raw_parts_mut(ptr, self.count_unallocated().into()) }
+            unsafe { std::slice::from_raw_parts_mut(ptr, Self::max_unallocated_count().into()) }
         }
     }
 
@@ -151,6 +156,17 @@ impl Shtick {
         self.special_count = new_count.as_negated();
     }
 
+    /// Doesn't zero bytes if the count is getting larger, just mutates `count`.
+    /// In debug, will assert that the new count is less than or equal to capacity.
+    fn mut_just_count(&mut self, new_count: Count16) {
+        assert!(new_count <= self.capacity());
+        if self.is_allocated() {
+            self.mut_count_unchecked_allocated(new_count);
+        } else {
+            self.mut_count_unchecked_unallocated(new_count);
+        }
+    }
+
     // TODO: `pub fn mut_count(&mut self, new_count: Count16)` should fill larger space with zeros.
 
     /// Returns the number of bytes that are available to this Shtick.
@@ -158,13 +174,13 @@ impl Shtick {
         if let Some(allocation) = self.allocation() {
             allocation.capacity()
         } else {
-            Self::unallocated_max_count()
+            Self::max_unallocated_count()
         }
     }
 
     /// Will truncate `self.count` to `new_capacity` if the new capacity is smaller.
     pub fn mut_capacity(&mut self, new_capacity: Count16) -> Shticked {
-        if new_capacity <= Self::unallocated_max_count() {
+        if new_capacity <= Self::max_unallocated_count() {
             // The desired end-Shtick is unallocated.
             if let Some(allocation) = self.allocation_mut() {
                 // The current Shtick is allocated...
@@ -178,7 +194,7 @@ impl Shtick {
                 self.mut_count_unchecked_unallocated(new_count);
                 // Copy into the slice.
                 self.deref_mut()
-                    .copy_from_slice(allocation.as_slice(new_count));
+                    .copy_from_slice(&allocation[0..new_count.into()]);
             } else {
                 // We already had an unallocated Shtick, but ensure the size gets dropped if necessary.
                 let count = self.count_unallocated();
@@ -209,9 +225,7 @@ impl Shtick {
                     Err(e) => return Err(ShtickError::Allocation(e)),
                     _ => {}
                 }
-                allocation
-                    .as_slice_mut(current_count)
-                    .copy_from_slice(self.deref());
+                allocation.deref_mut()[0..current_count.into()].copy_from_slice(self.deref());
                 self.maybe_allocated.allocation = std::mem::ManuallyDrop::new(allocation.unalign());
                 // We don't need to change the `current_count`, but we do need to
                 // convert it from unallocated to allocated special form.
@@ -245,13 +259,14 @@ impl Shtick {
 impl std::ops::Deref for Shtick {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        self.as_slice()
+        &self.as_slice()[0..self.count().into()]
     }
 }
 
 impl std::ops::DerefMut for Shtick {
     fn deref_mut(&mut self) -> &mut [u8] {
-        self.as_slice_mut()
+        let count = self.count().into();
+        &mut self.as_slice_mut()[0..count]
     }
 }
 
@@ -268,12 +283,11 @@ impl TryFrom<&[u8]> for Shtick {
         let mut shtick = Shtick::new();
         let count = Count16::from_usize(bytes.len()).map_err(|_e| ShtickError::TooLarge)?;
         shtick.mut_capacity(count)?;
-        if shtick.is_allocated() {
-            shtick.mut_count_unchecked_allocated(count);
-        } else {
-            shtick.mut_count_unchecked_unallocated(count);
-        }
-        shtick.as_slice_mut().copy_from_slice(bytes);
+        shtick.mut_just_count(count);
+        // we need to be careful because the slice may be equal to or larger
+        // than bytes (e.g., when the string is unallocated), and rust will
+        // be unhappy if it's larger.
+        shtick.as_slice_mut()[0..bytes.len()].copy_from_slice(bytes);
         Ok(shtick)
     }
 }
@@ -281,7 +295,7 @@ impl TryFrom<&[u8]> for Shtick {
 impl std::fmt::Display for Shtick {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", unsafe {
-            std::str::from_utf8_unchecked(self.as_slice())
+            std::str::from_utf8_unchecked(self.deref())
         })
     }
 }
@@ -289,7 +303,7 @@ impl std::fmt::Display for Shtick {
 impl std::fmt::Debug for Shtick {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Shtick::or_die(\"{}\")", unsafe {
-            std::str::from_utf8_unchecked(self.as_slice())
+            std::str::from_utf8_unchecked(self.deref())
         })
     }
 }
@@ -327,6 +341,9 @@ mod test {
     fn size_of_shtick() {
         assert_eq!(std::mem::size_of::<Shtick>(), 16);
     }
+
+    #[test]
+    fn shtick() {}
 
     #[test]
     fn shtick_internal_offsets() {
