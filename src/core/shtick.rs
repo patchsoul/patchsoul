@@ -1,6 +1,5 @@
 use crate::core::aligned::*;
 use crate::core::allocation::*;
-use crate::core::array::*;
 use crate::core::index::*;
 
 use std::ops::{Deref, DerefMut};
@@ -169,8 +168,22 @@ impl Shtick {
     // TODO: `pub fn mut_count(&mut self, new_count: Count16)` should fill larger space with zeros.
 
     pub fn push(&mut self, value: char) -> Shticked {
+        // This buffer doesn't need to be initialized; encode_utf8 will initialize
+        // the contents that we need.
+        let buffer = std::mem::MaybeUninit::<[u8; 4]>::uninit();
+        self.push_bytes(
+            value
+                .encode_utf8(unsafe { &mut buffer.assume_init() })
+                .as_bytes(),
+        )
+    }
+
+    pub fn push_bytes(&mut self, buffer: &[u8]) -> Shticked {
+        if buffer.len() > Count16::MAX_USIZE {
+            return Err(ShtickError::TooLarge);
+        }
         let count = self.count();
-        let needed_count = Count16::from_usize(count.into_usize() + value.len_utf8())
+        let needed_count = Count16::from_usize(count.into_usize() + buffer.len())
             .map_err(|_| ShtickError::TooLarge)?;
         let capacity = self.capacity();
         if needed_count >= capacity {
@@ -178,7 +191,7 @@ impl Shtick {
             self.mut_capacity(capacity.double_to_multiple_of(8))?;
             assert!(self.capacity() >= needed_count);
         }
-        value.encode_utf8(&mut self.as_slice_mut()[count.into()..needed_count.into()]);
+        self.as_slice_mut()[count.into()..needed_count.into()].copy_from_slice(buffer);
         self.mut_just_count(needed_count);
         Ok(())
     }
@@ -335,6 +348,13 @@ impl Drop for Shtick {
     }
 }
 
+impl std::fmt::Write for Shtick {
+    fn write_str(&mut self, string: &str) -> Result<(), std::fmt::Error> {
+        self.push_bytes(string.as_bytes())
+            .map_err(|_| std::fmt::Error)
+    }
+}
+
 //impl Clone for Shtick {
 //
 //}
@@ -344,7 +364,8 @@ mod test {
     use super::*;
 
     use arrayvec::ArrayVec;
-    use std::io::Write;
+    use std::fmt::Write;
+    use std::io::Write as OtherWrite;
 
     #[test]
     fn size_of_maybe_allocated() {
@@ -457,5 +478,12 @@ mod test {
         assert_eq!(shtick.count(), Count16::of(31));
         assert!(shtick.is_allocated());
         assert_eq!(shtick.deref(), "this will be allocatedß東𓄇".as_bytes());
+    }
+
+    #[test]
+    fn shtick_fmt() {
+        let mut shtick = Shtick::new();
+        write!(&mut shtick, "how {} you {}, {}?", "do", 4.5, 2).expect("ok");
+        assert_eq!(shtick.deref(), "how do you 4.5, 2?".as_bytes());
     }
 }
