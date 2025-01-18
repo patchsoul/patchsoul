@@ -58,8 +58,7 @@ where
         if value > Self::MAX_USIZE {
             Err(CountError::TooHigh)
         } else {
-            // TODO: do we need to do `-((value - 1) as i64) - 1` to safely wrap?
-            Ok(Self(T::from(-(value as i64)).unwrap()))
+            Ok(Self(T::from(-Wrapping(value as i64)).unwrap()))
         }
     }
 
@@ -84,6 +83,27 @@ where
         return Self(T::from(-min_value).unwrap().min(self.0 * Self::TWO));
     }
 
+    /// Won't double past Self::MAX, so will return that if doubling would overflow.
+    /// NOTE: `multiple` should be a power of two.
+    pub fn double_to_multiple_of(self, multiple: u8) -> Self {
+        let multiple = multiple as usize;
+        assert!(Self::MAX_USIZE % multiple == 0);
+        let self_usize = self.into_usize();
+        if self_usize == 0 {
+            return Self::from_usize(multiple as usize).unwrap();
+        }
+        let double = match self_usize.checked_add(self_usize) {
+            Some(value) => value,
+            None => {
+                return Self::MAX;
+            }
+        };
+        match Self::from_usize(((double - 1) / multiple + 1) * multiple) {
+            Ok(value) => value,
+            Err(_) => Self::MAX,
+        }
+    }
+
     pub fn contains(self, offset: Offset) -> bool {
         offset >= 0 && offset <= self.max_offset()
     }
@@ -94,7 +114,7 @@ where
         -(self.0.to_i64().unwrap() + 1)
     }
 
-    pub fn as_usize(self) -> usize {
+    pub fn into_usize(self) -> usize {
         assert!(self.0 <= T::zero());
         (Wrapping(self.max_offset()) + Wrapping(1)).0 as usize
     }
@@ -229,7 +249,7 @@ impl<T: SignedPrimitive> SubAssign<Self> for CountN<T> {
 
 impl<T: SignedPrimitive> Into<usize> for CountN<T> {
     fn into(self) -> usize {
-        self.as_usize()
+        self.into_usize()
     }
 }
 
@@ -362,11 +382,26 @@ mod test {
     use super::*;
 
     #[test]
+    fn count_from_usize() {
+        assert_eq!(Count8::from_usize(4), Ok(Count8::of(4)));
+        assert_eq!(Count8::from_usize(128), Ok(CountN::<i8>(-128)));
+        assert_eq!(Count16::from_usize(32_768), Ok(CountN::<i16>(-32_768)));
+        assert_eq!(
+            Count32::from_usize(2_147_483_648),
+            Ok(CountN::<i32>(-2_147_483_648))
+        );
+        assert_eq!(
+            Count64::from_usize(9_223_372_036_854_775_808),
+            Ok(CountN::<i64>(-9_223_372_036_854_775_808)),
+        );
+    }
+
+    #[test]
     fn count_double_or_max_for_very_small_values() {
-        assert_eq!(Count::of(0).double_or_max(1), Count::of(1));
-        assert_eq!(Count::of(0).double_or_max(2), Count::of(2));
-        assert_eq!(Count::of(1).double_or_max(50), Count::of(50));
-        assert_eq!(Count::of(200).double_or_max(127), Count::of(400));
+        assert_eq!(Count8::of(0).double_or_max(1), Count8::of(1));
+        assert_eq!(Count16::of(0).double_or_max(2), Count16::of(2));
+        assert_eq!(Count32::of(1).double_or_max(50), Count32::of(50));
+        assert_eq!(Count64::of(200).double_or_max(127), Count::of(400));
     }
 
     #[test]
@@ -374,21 +409,69 @@ mod test {
         assert_eq!(Count::of(123).double_or_max(2), Count::of(246));
         assert_eq!(
             Count::of(100_010_001).double_or_max(3),
-            Count::of(200_020_002)
+            Count::of(200_020_002),
         );
         assert_eq!(
             Count::from_usize(Count::MAX_USIZE / 2 - 1)
                 .expect("ok")
                 .double_or_max(4),
-            Count::of(9_223_372_036_854_775_806)
+            Count::of(9_223_372_036_854_775_806),
         );
     }
 
     #[test]
     fn count_double_or_max_for_large_values() {
-        assert_eq!(Count::MAX.double_or_max(5), Count::MAX);
-        assert_eq!(Count::of(i64::MAX - 5).double_or_max(6), Count::MAX);
+        assert_eq!(Count8::MAX.double_or_max(5), Count8::MAX);
+        assert_eq!(Count16::MAX.double_or_max(2), Count16::MAX);
+        assert_eq!(Count32::of(i32::MAX - 1).double_or_max(4), Count32::MAX);
+        assert_eq!(Count64::of(i64::MAX - 5).double_or_max(6), Count::MAX);
         assert_eq!(Count::of(i64::MAX / 2 + 5).double_or_max(7), Count::MAX);
+    }
+
+    #[test]
+    fn count_double_to_multiple_of_for_zero() {
+        assert_eq!(Count8::of(0).double_to_multiple_of(1), Count8::of(1));
+        assert_eq!(Count16::of(0).double_to_multiple_of(4), Count16::of(4));
+        assert_eq!(Count32::of(0).double_to_multiple_of(64), Count32::of(64));
+        assert_eq!(Count64::of(0).double_to_multiple_of(128), Count::of(128));
+    }
+
+    #[test]
+    fn count_double_to_multiple_of_for_very_small_values() {
+        assert_eq!(Count8::of(1).double_to_multiple_of(4), Count8::of(4));
+        assert_eq!(Count16::of(2).double_to_multiple_of(16), Count16::of(16));
+        assert_eq!(Count32::of(7).double_to_multiple_of(64), Count32::of(64));
+        assert_eq!(Count64::of(50).double_to_multiple_of(128), Count::of(128));
+    }
+
+    #[test]
+    fn count_double_to_multiple_of_for_small_values() {
+        assert_eq!(Count::of(123).double_to_multiple_of(128), Count::of(256));
+        assert_eq!(Count::of(1001).double_to_multiple_of(64), Count::of(2048),);
+        assert_eq!(
+            Count::from_usize(Count::MAX_USIZE / 2 - 1)
+                .expect("ok")
+                .double_to_multiple_of(4),
+            CountN::<i64>(-9_223_372_036_854_775_808),
+        );
+    }
+
+    #[test]
+    fn count_double_to_multiple_of_for_large_values() {
+        assert_eq!(Count8::of(127).double_to_multiple_of(4), Count8::MAX);
+        assert_eq!(Count16::MAX.double_to_multiple_of(2), Count16::MAX);
+        assert_eq!(
+            Count32::of(i32::MAX - 1).double_to_multiple_of(4),
+            Count32::MAX
+        );
+        assert_eq!(
+            Count64::of(i64::MAX - 5).double_to_multiple_of(8),
+            Count64::MAX
+        );
+        assert_eq!(
+            Count::of(i64::MAX / 2 + 5).double_to_multiple_of(16),
+            Count::MAX
+        );
     }
 
     #[test]

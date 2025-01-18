@@ -48,7 +48,6 @@ union MaybeAllocated {
 
 impl Shtick {
     const UNALLOCATED16: i16 = 14;
-    const SHORT_NEXT_POWER_OF_2: i16 = 16;
     /// We have an offset to ensure we can distinguish
     /// an unallocated Shtick from an allocated one.
     /// See documentation on `special_count`.
@@ -171,16 +170,12 @@ impl Shtick {
 
     pub fn push(&mut self, value: char) -> Shticked {
         let count = self.count();
-        let needed_count = Count16::from_usize(count.as_usize() + value.len_utf8())
+        let needed_count = Count16::from_usize(count.into_usize() + value.len_utf8())
             .map_err(|_| ShtickError::TooLarge)?;
         let capacity = self.capacity();
         if needed_count >= capacity {
-            self.mut_capacity(if self.is_unallocated() {
-                // We were at capacity of 14, could go to 28, but let's do 32.
-                Count16::of(Self::SHORT_NEXT_POWER_OF_2 * 2)
-            } else {
-                capacity + capacity
-            })?;
+            // Try to grow in multiples of the word size (at least on 64 bit machines = 8 bytes)
+            self.mut_capacity(capacity.double_to_multiple_of(8))?;
             assert!(self.capacity() >= needed_count);
         }
         value.encode_utf8(&mut self.as_slice_mut()[count.into()..needed_count.into()]);
@@ -443,7 +438,7 @@ mod test {
     #[test]
     fn shtick_push_unicode() {
         let mut shtick = Shtick::or_die("this will be allocated");
-        shtick.mut_capacity(Count16::of(28)); // test that the last capacity change will be ok.
+        shtick.mut_capacity(Count16::of(28)).expect("should be ok"); // test that the last capacity change will be ok.
         assert_eq!(shtick.count(), Count16::of(22));
         assert!(shtick.is_allocated());
 
