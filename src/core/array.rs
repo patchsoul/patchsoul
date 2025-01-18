@@ -1,5 +1,6 @@
 use crate::core::allocation::*;
 use crate::core::index::*;
+use crate::core::types::*;
 
 pub type ArrayResult<T> = Result<T, ArrayError>;
 pub type Arrayed = ArrayResult<()>;
@@ -7,6 +8,7 @@ pub type Arrayed = ArrayResult<()>;
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
 pub enum ArrayError {
     Allocation(AllocationError),
+    Unknown,
 }
 
 impl ArrayError {
@@ -30,7 +32,7 @@ pub struct ArrayN<T, C: SignedPrimitive> {
     count: CountN<C>,
 }
 
-// TODO: implement #[derive(Clone, Debug, Hash)]
+// TODO: implement #[derive(Debug, Hash)]
 impl<T, C: SignedPrimitive> ArrayN<T, C> {
     pub fn new() -> Self {
         Self {
@@ -210,6 +212,50 @@ impl<T: std::cmp::PartialEq, C: SignedPrimitive> PartialEq<Self> for ArrayN<T, C
 
 impl<T: std::cmp::Eq, C: SignedPrimitive> Eq for ArrayN<T, C> {}
 
+impl<T: Clone, C: SignedPrimitive> TryClone for ArrayN<T, C> {
+    type Error = ArrayError;
+
+    fn try_clone(&self) -> Result<Self, ArrayError> {
+        let mut result = Self::new();
+        // Only need to clone up to `count`, not the full `capacity`.
+        result.mut_capacity(self.count())?;
+        for i in 0..=self.count.max_offset() {
+            result
+                .push(self[i as usize].clone())
+                .expect("already at necessary capacity");
+        }
+        Ok(result)
+    }
+}
+
+// TODO: when rust can handle specification
+//impl<T: TryClone, C: SignedPrimitive> TryClone for ArrayN<T, C> {
+//    type Error = ArrayError;
+//
+//    fn try_clone(&self) -> Result<Self, ArrayError> {
+//        let mut result = Self::new();
+//        // Only need to clone up to `count`, not the full `capacity`.
+//        result.mut_capacity(self.count())?;
+//        for i in 0..=self.count.max_offset() {
+//            let clone = self[i as usize]
+//                .try_clone()
+//                .map_err(|_| ArrayError::Unknown)?;
+//            result.push(clone).expect("already at necessary capacity");
+//        }
+//        Ok(result)
+//    }
+//}
+
+impl<T: std::fmt::Debug, C: SignedPrimitive> std::fmt::Debug for ArrayN<T, C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Array(")?;
+        for i in 0..self.count().into_usize() {
+            write!(f, "{:?}, ", self[i]);
+        }
+        write!(f, ")")
+    }
+}
+
 impl<T, C: SignedPrimitive> Default for ArrayN<T, C> {
     fn default() -> Self {
         return Self::new();
@@ -286,5 +332,24 @@ mod test {
         array.mut_capacity(Count::of(10)).expect("small alloc");
         // TODO
         assert_eq!(array.capacity(), Count::of(10));
+    }
+
+    #[test]
+    fn clone_adds_all_values() {
+        let mut array = Array::<i32>::new();
+        array.push(1);
+        array.push(100);
+        array.push(40);
+        array.push(-771);
+        array.push(6);
+        assert_eq!(array.capacity(), Count::of(8));
+
+        let clone = array.try_clone().expect("ok");
+        assert_eq!(clone.count(), Count::of(5));
+        assert_eq!(clone.capacity(), Count::of(5));
+        assert_eq!(array, clone);
+        assert_eq!(clone[1], 100);
+        assert_eq!(clone[2], 40);
+        assert_eq!(clone[3], -771);
     }
 }

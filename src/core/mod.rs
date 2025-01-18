@@ -12,3 +12,6 @@ pub use index::*;
 
 pub mod shtick;
 pub use shtick::*;
+
+pub mod types;
+pub use types::*;
