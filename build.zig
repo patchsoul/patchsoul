@@ -7,6 +7,30 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const rtmidi_dep_c = b.dependency("rtmidi", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const rtmidi_zig = b.addStaticLibrary(.{
+        .name = "rtmidi-zig",
+        .root_source_file = b.path("src/midi/rtmidi.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    rtmidi_zig.linkLibCpp();
+    rtmidi_zig.addCSourceFiles(.{
+        .root = rtmidi_dep_c.path(""),
+        .files = &.{ "rtmidi_c.cpp", "RtMidi.cpp" },
+    });
+    rtmidi_zig.installHeadersDirectory(rtmidi_dep_c.path(""), "", .{
+        .include_extensions = &.{ "rtmidi_c.h", "RtMidi.h" },
+    });
+    const rtmidi_dep = b.addModule("rtmidi", .{
+        .root_source_file = b.path("src/midi/rtmidi.zig"),
+    });
+    rtmidi_dep.addIncludePath(rtmidi_dep_c.path(""));
+    b.installArtifact(rtmidi_zig);
+
     const vaxis_dep = b.dependency("vaxis", .{
         .target = target,
         .optimize = optimize,

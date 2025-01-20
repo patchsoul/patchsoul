@@ -3,6 +3,10 @@
     .version = "0.0.0",
     //.minimum_zig_version = "0.11.0",
     .dependencies = .{
+        .rtmidi = .{
+            .url = "https://github.com/thestk/rtmidi/archive/refs/tags/6.0.0.tar.gz",
+            .hash = "122098d759a37725c9913a08f54112671f9f00a458a5c8102e2f5cdd9f9dac98ca07",
+        },
         .vaxis = .{
             .url = "https://github.com/rockorager/libvaxis/archive/refs/tags/v0.5.1.tar.gz",
             .hash = "1220de23a3240e503397ea579de4fd85db422f537e10036ef74717c50164475813ce",
