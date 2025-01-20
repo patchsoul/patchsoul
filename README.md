@@ -1,2 +1,2 @@
 # patchsoul
-mono repo for rust game tools
+mono repo for game tools
