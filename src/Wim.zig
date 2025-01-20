@@ -1,16 +1,10 @@
+const Event = @import("common.zig").Event;
+
 const std = @import("std");
 const vaxis = @import("vaxis");
 
 /// This will reset the terminal if panics occur.
 pub const panic_handler = vaxis.panic_handler;
-
-pub const Event = union(enum) {
-    key_press: vaxis.Key,
-    key_release: vaxis.Key,
-    mouse: vaxis.Mouse,
-    /// Window resize, also sent when loop begins.
-    winsize: vaxis.Winsize,
-};
 
 const Wim = @This();
 
