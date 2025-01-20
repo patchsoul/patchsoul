@@ -21,6 +21,9 @@ pub struct Noisy {
 
 impl Noisy {
     pub fn new(value: u8) -> Self {
+        let mut shtick = Shtick::new();
+        write!(&mut shtick, "Noisy+({})", value).expect("<=3");
+        add_noise(shtick);
         Self { value }
     }
 }
@@ -33,6 +36,8 @@ impl<T: std::default::Default> Default for Noisy {
 
 impl<T> Drop for Noisy<T> {
     fn drop(&mut self) {
-        
+        let mut shtick = Shtick::new();
+        write!(&mut shtick, "Noisy-({})", self.value).expect("<=3");
+        add_noise(shtick);
     }
 }
