@@ -9,6 +9,14 @@ pub const TestWriterData = struct {
     buffer: [Shtick.max_count]u8 = undefined,
     current_buffer_offset: usize = 0,
     lines: OwnedShticks = OwnedShticks.init(),
+
+    pub fn reset(self: *Self) void {
+        self.current_buffer_offset = 0;
+        self.lines.deinit();
+        self.lines = OwnedShticks.init();
+    }
+
+    const Self = @This();
 };
 
 pub const TestWriter = struct {

@@ -43,6 +43,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
+
+    const lib = b.createModule(.{
+        .root_source_file = b.path("lib/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("lib", lib);
+
     b.installArtifact(exe);
 
     const exe_unit_tests = b.addTest(.{
@@ -74,16 +82,6 @@ pub fn build(b: *std.Build) void {
     // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
-
-    const lib = b.addStaticLibrary(.{
-        .name = "patchsoul",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
-        .root_source_file = b.path("lib/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    b.installArtifact(lib);
 
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path("lib/lib.zig"),

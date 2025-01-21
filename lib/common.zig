@@ -7,6 +7,13 @@ pub const debug = builtin.mode == .Debug;
 pub const in_test = builtin.is_test;
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+pub fn cleanUp() void {
+    if (gpa.deinit() == .leak) {
+        stderr.print("had memory leak :(\n", .{}) catch {};
+    }
+    stdout_data.reset();
+    stderr_data.reset();
+}
 
 pub const allocator: std.mem.Allocator = if (in_test)
     std.testing.allocator
