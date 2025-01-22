@@ -74,7 +74,7 @@ pub const Shtick = extern struct {
     }
 
     pub fn moot(self: *Self) Self {
-        const new_string = *self;
+        const new_string = self.*;
         self.* = Self{};
         return new_string;
     }

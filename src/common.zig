@@ -1,4 +1,5 @@
 const vaxis = @import("vaxis");
+const rtmidi = @import("rtmidi");
 
 pub const Event = union(enum) {
     key_press: vaxis.Key,
@@ -6,6 +7,5 @@ pub const Event = union(enum) {
     mouse: vaxis.Mouse,
     /// Window resize, also sent when loop begins.
     winsize: vaxis.Winsize,
-    midi_connect: i32,
-    midi_disconnect: i32,
+    midi_event: rtmidi.MidiEvent,
 };

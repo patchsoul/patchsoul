@@ -41,8 +41,14 @@ pub fn OwnedList(comptime T: type) type {
 
         /// Returns a "reference" -- don't `deinit()` it.
         pub inline fn inBounds(self: *const Self, index: usize) T {
-            std.debug.std.debug.assert(index < self.count());
             return self.array.items[index];
+        }
+
+        pub inline fn maybe(self: *const Self, index: usize) ?T {
+            return if (index < self.count())
+                self.array.items[index]
+            else
+                null;
         }
 
         // Returns a value, make sure to `deinit()` it if necessary.

@@ -50,6 +50,11 @@ pub fn run(self: *Wim) !void {
         while (loop.tryEvent()) |event| {
             try self.update(event);
         }
+        // TODO: this isn't a good solution as we should interrupt
+        // loop.pollEvent() earlier if midi events come in earlier.
+        while (self.rtmidi.notify()) |event| {
+            try self.update(.{ .midi_event = event });
+        }
 
         self.draw();
 
