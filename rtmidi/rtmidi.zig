@@ -1,3 +1,8 @@
+const lib = @import("lib");
+
+const Shtick = lib.Shtick;
+const common = lib.common;
+
 const c = @cImport({
     @cInclude("rtmidi_c.h");
 });
@@ -9,6 +14,9 @@ pub const RtMidi = struct {
     rt_midi_in: c.RtMidiInPtr,
 
     pub fn init() Self {
+        const shtick = Shtick.unallocated("asdf");
+        common.debugPrint("got shtick: ", shtick);
+
         return Self{
             .rt_midi_in = c.rtmidi_in_create(c.RTMIDI_API_UNSPECIFIED, "patchsoul", 128),
         };
@@ -33,3 +41,5 @@ pub const RtMidi = struct {
 
     const Self = @This();
 };
+
+const Port = struct {};

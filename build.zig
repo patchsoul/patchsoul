@@ -7,6 +7,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const lib = b.createModule(.{
+        .root_source_file = b.path("lib/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const rtmidi_dep_c = b.dependency("rtmidi", .{
         .target = target,
         .optimize = optimize,
@@ -32,6 +38,7 @@ pub fn build(b: *std.Build) void {
     });
     rtmidi.addIncludePath(rtmidi_dep_c.path(""));
     rtmidi.linkLibrary(rtmidi_zig);
+    rtmidi.addImport("lib", lib);
 
     const vaxis_dep = b.dependency("vaxis", .{
         .target = target,
@@ -46,12 +53,6 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
     exe.root_module.addImport("rtmidi", rtmidi);
-
-    const lib = b.createModule(.{
-        .root_source_file = b.path("lib/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
     exe.root_module.addImport("lib", lib);
 
     b.installArtifact(exe);
