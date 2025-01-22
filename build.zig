@@ -13,10 +13,11 @@ pub fn build(b: *std.Build) void {
     });
     const rtmidi_zig = b.addStaticLibrary(.{
         .name = "rtmidi-zig",
-        .root_source_file = b.path("src/midi/rtmidi.zig"),
+        .root_source_file = b.path("rtmidi/rtmidi.zig"),
         .target = target,
         .optimize = optimize,
     });
+    rtmidi_zig.linkLibC();
     rtmidi_zig.linkLibCpp();
     rtmidi_zig.addCSourceFiles(.{
         .root = rtmidi_dep_c.path(""),
@@ -25,11 +26,12 @@ pub fn build(b: *std.Build) void {
     rtmidi_zig.installHeadersDirectory(rtmidi_dep_c.path(""), "", .{
         .include_extensions = &.{ "rtmidi_c.h", "RtMidi.h" },
     });
-    const rtmidi_dep = b.addModule("rtmidi", .{
-        .root_source_file = b.path("src/midi/rtmidi.zig"),
-    });
-    rtmidi_dep.addIncludePath(rtmidi_dep_c.path(""));
     b.installArtifact(rtmidi_zig);
+    const rtmidi = b.addModule("rtmidi", .{
+        .root_source_file = b.path("rtmidi/rtmidi.zig"),
+    });
+    rtmidi.addIncludePath(rtmidi_dep_c.path(""));
+    rtmidi.linkLibrary(rtmidi_zig);
 
     const vaxis_dep = b.dependency("vaxis", .{
         .target = target,
@@ -43,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
+    exe.root_module.addImport("rtmidi", rtmidi);
 
     const lib = b.createModule(.{
         .root_source_file = b.path("lib/lib.zig"),

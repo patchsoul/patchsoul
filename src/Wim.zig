@@ -1,4 +1,5 @@
 const Event = @import("common.zig").Event;
+const RtMidi = @import("rtmidi").RtMidi;
 
 const std = @import("std");
 const vaxis = @import("vaxis");
@@ -14,6 +15,7 @@ tty: vaxis.Tty,
 vx: vaxis.Vaxis,
 /// Mouse event to be handled during draw cycle.
 mouse: ?vaxis.Mouse,
+rtmidi: RtMidi,
 
 pub fn init(allocator: std.mem.Allocator) !Wim {
     return .{
@@ -22,12 +24,14 @@ pub fn init(allocator: std.mem.Allocator) !Wim {
         .tty = try vaxis.Tty.init(),
         .vx = try vaxis.init(allocator, .{}),
         .mouse = null,
+        .rtmidi = RtMidi.init(),
     };
 }
 
 pub fn deinit(self: *Wim) void {
     self.vx.deinit(self.allocator, self.ttyWriter());
     self.tty.deinit();
+    self.rtmidi.deinit();
 }
 
 pub fn run(self: *Wim) !void {
