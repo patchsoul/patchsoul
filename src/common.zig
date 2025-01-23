@@ -7,5 +7,5 @@ pub const Event = union(enum) {
     mouse: vaxis.Mouse,
     /// Window resize, also sent when loop begins.
     winsize: vaxis.Winsize,
-    midi_event: rtmidi.MidiEvent,
+    midi: rtmidi.MidiEvent,
 };

@@ -10,32 +10,33 @@ pub const panic_handler = vaxis.panic_handler;
 const Wim = @This();
 
 allocator: std.mem.Allocator,
-should_quit: bool,
+should_quit: bool = false,
 tty: vaxis.Tty,
 vx: vaxis.Vaxis,
+rtmidi: ?RtMidi,
 /// Mouse event to be handled during draw cycle.
-mouse: ?vaxis.Mouse,
-rtmidi: RtMidi,
+mouse: ?vaxis.Mouse = null,
+midi_connected: bool = false,
 
 pub fn init(allocator: std.mem.Allocator) !Wim {
     return .{
         .allocator = allocator,
-        .should_quit = false,
         .tty = try vaxis.Tty.init(),
         .vx = try vaxis.init(allocator, .{}),
-        .mouse = null,
-        .rtmidi = RtMidi.init(),
+        .rtmidi = RtMidi.init() catch null,
     };
 }
 
 pub fn deinit(self: *Wim) void {
     self.vx.deinit(self.allocator, self.ttyWriter());
     self.tty.deinit();
-    self.rtmidi.deinit();
+    if (self.rtmidi) |*rtmidi| {
+        rtmidi.deinit();
+    }
 }
 
 fn midiCallback(loop: *vaxis.Loop(Event), event: RtMidi.Event) void {
-    loop.postEvent(.{ .midi_event = event });
+    loop.postEvent(.{ .midi = event });
 }
 
 pub fn run(self: *Wim) !void {
@@ -48,7 +49,9 @@ pub fn run(self: *Wim) !void {
     try self.vx.enterAltScreen(self.ttyWriter());
     try self.vx.queryTerminal(self.ttyWriter(), 1 * std.time.ns_per_s);
     try self.vx.setMouseMode(self.ttyWriter(), true);
-    self.rtmidi.start(10, &loop, midiCallback);
+    if (self.rtmidi) |*rtmidi| {
+        rtmidi.start(10, &loop, midiCallback);
+    }
 
     while (!self.should_quit) {
         loop.pollEvent();
@@ -71,22 +74,33 @@ pub fn update(self: *Wim, event: Event) !void {
                 self.should_quit = true;
         },
         .mouse => |mouse| self.mouse = mouse,
+        .midi => |midi| switch (midi) {
+            .ports_updated => {
+                self.midi_connected = if (self.rtmidi) |rtmidi| rtmidi.portCount() > 0 else false;
+            },
+        },
         .winsize => |ws| try self.vx.resize(self.allocator, self.ttyWriter(), ws),
         else => {},
     }
 }
 
 pub fn draw(self: *Wim) void {
-    const msg = "Hello, world!";
-
     const window = self.vx.window();
 
     window.clear();
     self.vx.setMouseShape(.default);
 
+    if (self.midi_connected) {
+        self.drawMidiConnected(window);
+    }
+}
+
+fn drawMidiConnected(self: *Wim, window: vaxis.Window) void {
+    const msg = "midi ports connected";
+
     const child = window.child(.{
-        .x_off = (window.width / 2) - 7,
-        .y_off = window.height / 2 + 1,
+        .x_off = (window.width - msg.len) / 2,
+        .y_off = window.height / 2 - 2,
         .width = .{ .limit = msg.len },
         .height = .{ .limit = 1 },
     });

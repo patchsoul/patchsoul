@@ -6,7 +6,6 @@ const common = lib.common;
 const OwnedPorts = lib.owned_list.OwnedList(Port);
 
 const std = @import("std");
-
 const c = @cImport({
     @cInclude("rtmidi_c.h");
 });
@@ -37,6 +36,9 @@ fn make(r: Running) void {
 }
 
 pub const RtMidi = struct {
+    pub const Error = error{
+        could_not_init,
+    };
     pub const Event = MidiEvent;
     pub fn Callback(comptime D: type) type {
         return MidiEventCallback(D);
@@ -45,22 +47,49 @@ pub const RtMidi = struct {
     // Number of ticks to wait before checking for plug/unplugs.
     update_port_wait: u16 = 15,
     update_port_counter: u16 = 0,
-    rt: c.RtMidiInPtr,
     ports: OwnedPorts = OwnedPorts.init(),
+    rt: c.RtMidiInPtr,
+    err_file: ?std.fs.File,
 
-    pub fn init() Self {
+    pub fn init() Error!Self {
         if (!is(.not_running)) {
             @panic("don't use more than one RtMidi at a time");
         }
         make(.ready);
+        const err_file = std.fs.cwd().createFile("midi.err", .{}) catch null;
+        writeErrFile(err_file, "midi init...\n", .{});
+        const rt = c.rtmidi_in_create(c.RTMIDI_API_UNSPECIFIED, "patchsoul", 100);
+        if (rt.*.ptr == null) {
+            writeErrFile(err_file, "midi init error!!\n", .{});
+            return Error.could_not_init;
+        }
+        writeErrFile(err_file, "midi init complete.\n", .{});
         return Self{
-            .rt = c.rtmidi_in_create(c.RTMIDI_API_UNSPECIFIED, "patchsoul", 0),
+            .err_file = err_file,
+            .rt = rt,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.stop();
         c.rtmidi_in_free(self.rt);
+        self.rt = null;
+        if (self.err_file) |file| {
+            file.close();
+            self.err_file = null;
+        }
+    }
+
+    fn writeErrFile(err_file: ?std.fs.File, comptime format: []const u8, data: anytype) void {
+        if (err_file) |file| {
+            std.fmt.format(file.writer(), format, data) catch {};
+        }
+    }
+
+    fn writeErr(self: *Self, comptime format: []const u8, data: anytype) void {
+        if (self.err_file) |file| {
+            std.fmt.format(file.writer(), format, data) catch {};
+        }
     }
 
     pub fn stop(self: *Self) void {
@@ -71,27 +100,31 @@ pub const RtMidi = struct {
 
     // TODO: add a `context: anytype` that we pass in to the function.
     pub fn start(self: *Self, sleep_time_ns: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
+        self.writeErr("midi starting...\n", .{});
+        std.debug.assert(self.rt.*.ptr != null);
         make(.running);
         _ = std.Thread.spawn(.{}, midiLoop, .{ self, sleep_time_ns, data, callback }) catch {
             @panic("couldn't spawn RtMidi thread");
         };
     }
 
-    fn midiLoop(self: *Self, sleep_time: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
-        const sleep_time_ns: usize = @intCast(sleep_time);
+    fn midiLoop(self: *Self, sleep_time_ns: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
         while (is(.running)) {
-            std.time.sleep(sleep_time_ns * std.time.ns_per_s);
             self.maybeUpdatePorts(data, callback);
             self.notify(data, callback);
+            std.time.sleep(sleep_time_ns);
         }
+        self.writeErr("midi stopped.\n", .{});
     }
 
     pub inline fn portCount(self: *const Self) u32 {
+        std.debug.assert(self.rt.*.ptr != null);
         return c.rtmidi_get_port_count(self.rt);
     }
 
     // Caller needs to deinit the Shtick.
     pub fn portName(self: *Self, port: u32) Shtick {
+        std.debug.assert(self.rt.*.ptr != null);
         var buffer: [Shtick.max_count + 1]u8 = undefined;
         var name_count: c_int = @intCast(buffer.len);
         if (c.rtmidi_get_port_name(self.rt, port, &buffer, &name_count) != 0) {
@@ -120,12 +153,14 @@ pub const RtMidi = struct {
         if (self.update_port_counter < self.update_port_wait) {
             return;
         }
+        self.writeErr("updating midi ports...\n", .{});
         self.update_port_counter = 0;
         const port_count = self.portCount();
         var result: ?Event = if (port_count != self.ports.count())
             Event.ports_updated
         else
             null;
+        self.writeErr("seeing {d} ports, have {d} ports.\n", .{ port_count, self.ports.count() });
 
         for (0..port_count) |pusize| {
             const p: u32 = @intCast(pusize);
@@ -151,7 +186,10 @@ pub const RtMidi = struct {
                 // we didn't have a port here, so definitely need to update
             }
             result = Event.ports_updated;
-            std.debug.assert(self.ports.count() == p);
+            if (self.ports.count() != p) {
+                self.writeErr("got wrong ports after deleting some: {d} vs {d}\n", .{ self.ports.count(), p });
+                @panic("expected self.ports.count() == p");
+            }
             self.ports.append(Port.init(port_name.moot(), p)) catch {
                 @panic("expected not a lot of ports open");
             };
@@ -159,6 +197,7 @@ pub const RtMidi = struct {
         if (result) |event| {
             callback(data, event);
         }
+        self.writeErr("done updating midi ports.\n", .{});
     }
 
     const Self = @This();
