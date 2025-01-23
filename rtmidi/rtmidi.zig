@@ -16,8 +16,31 @@ pub const MidiEvent = union(enum) {
     ports_updated,
 };
 
+const Running = enum(u8) {
+    not_running,
+    ready,
+    running,
+};
+
+pub fn MidiEventCallback(comptime D: type) type {
+    return *const fn (data: D, e: MidiEvent) void;
+}
+
+var running = std.atomic.Value(Running).init(.not_running);
+
+fn is(r: Running) bool {
+    return running.load(.acquire) == r;
+}
+
+fn make(r: Running) void {
+    running.store(r, .release);
+}
+
 pub const RtMidi = struct {
     pub const Event = MidiEvent;
+    pub fn Callback(comptime D: type) type {
+        return MidiEventCallback(D);
+    }
 
     // Number of ticks to wait before checking for plug/unplugs.
     update_port_wait: u16 = 15,
@@ -26,30 +49,78 @@ pub const RtMidi = struct {
     ports: OwnedPorts = OwnedPorts.init(),
 
     pub fn init() Self {
+        if (!is(.not_running)) {
+            @panic("don't use more than one RtMidi at a time");
+        }
+        make(.ready);
         return Self{
             .rt = c.rtmidi_in_create(c.RTMIDI_API_UNSPECIFIED, "patchsoul", 0),
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.stop();
         c.rtmidi_in_free(self.rt);
     }
 
-    pub fn notify(self: *Self) ?Event {
-        for (self.ports.items()) |*port| {
-            if (port.notify()) |event| {
-                return event;
-            }
-        }
-        self.update_port_counter += 1;
-        if (self.update_port_counter >= self.update_port_wait) {
-            self.update_port_counter = 0;
-            return self.updatePorts();
-        }
-        return null;
+    pub fn stop(self: *Self) void {
+        _ = self;
+        std.debug.assert(is(.running));
+        make(.not_running);
     }
 
-    pub fn updatePorts(self: *Self) ?Event {
+    // TODO: add a `context: anytype` that we pass in to the function.
+    pub fn start(self: *Self, sleep_time_ns: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
+        make(.running);
+        _ = std.Thread.spawn(.{}, midiLoop, .{ self, sleep_time_ns, data, callback }) catch {
+            @panic("couldn't spawn RtMidi thread");
+        };
+    }
+
+    fn midiLoop(self: *Self, sleep_time: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
+        const sleep_time_ns: usize = @intCast(sleep_time);
+        while (is(.running)) {
+            std.time.sleep(sleep_time_ns * std.time.ns_per_s);
+            self.maybeUpdatePorts(data, callback);
+            self.notify(data, callback);
+        }
+    }
+
+    pub inline fn portCount(self: *const Self) u32 {
+        return c.rtmidi_get_port_count(self.rt);
+    }
+
+    // Caller needs to deinit the Shtick.
+    pub fn portName(self: *Self, port: u32) Shtick {
+        var buffer: [Shtick.max_count + 1]u8 = undefined;
+        var name_count: c_int = @intCast(buffer.len);
+        if (c.rtmidi_get_port_name(self.rt, port, &buffer, &name_count) != 0) {
+            // TODO: log error
+            return Shtick.unallocated("?!");
+        }
+        if (name_count > 0) {
+            // ignore trailing zero byte.
+            name_count -= 1;
+        }
+        return Shtick.init(buffer[0..@intCast(name_count)]) catch {
+            @panic("ran out of memory for port names");
+        };
+    }
+
+    fn notify(self: *Self, data: anytype, callback: Callback(@TypeOf(data))) void {
+        for (self.ports.items()) |*port| {
+            while (port.notify()) |event| {
+                callback(data, event);
+            }
+        }
+    }
+
+    fn maybeUpdatePorts(self: *Self, data: anytype, callback: Callback(@TypeOf(data))) void {
+        self.update_port_counter += 1;
+        if (self.update_port_counter < self.update_port_wait) {
+            return;
+        }
+        self.update_port_counter = 0;
         const port_count = self.portCount();
         var result: ?Event = if (port_count != self.ports.count())
             Event.ports_updated
@@ -85,28 +156,9 @@ pub const RtMidi = struct {
                 @panic("expected not a lot of ports open");
             };
         }
-        return result;
-    }
-
-    pub inline fn portCount(self: *const Self) u32 {
-        return c.rtmidi_get_port_count(self.rt);
-    }
-
-    // Caller needs to deinit the Shtick.
-    pub fn portName(self: *Self, port: u32) Shtick {
-        var buffer: [Shtick.max_count + 1]u8 = undefined;
-        var name_count: c_int = @intCast(buffer.len);
-        if (c.rtmidi_get_port_name(self.rt, port, &buffer, &name_count) != 0) {
-            // TODO: log error
-            return Shtick.unallocated("?!");
+        if (result) |event| {
+            callback(data, event);
         }
-        if (name_count > 0) {
-            // ignore trailing zero byte.
-            name_count -= 1;
-        }
-        return Shtick.init(buffer[0..@intCast(name_count)]) catch {
-            @panic("ran out of memory for port names");
-        };
     }
 
     const Self = @This();

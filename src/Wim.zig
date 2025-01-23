@@ -34,6 +34,10 @@ pub fn deinit(self: *Wim) void {
     self.rtmidi.deinit();
 }
 
+fn midiCallback(loop: *vaxis.Loop(Event), event: RtMidi.Event) void {
+    loop.postEvent(.{ .midi_event = event });
+}
+
 pub fn run(self: *Wim) !void {
     var loop: vaxis.Loop(Event) = .{
         .tty = &self.tty,
@@ -44,16 +48,12 @@ pub fn run(self: *Wim) !void {
     try self.vx.enterAltScreen(self.ttyWriter());
     try self.vx.queryTerminal(self.ttyWriter(), 1 * std.time.ns_per_s);
     try self.vx.setMouseMode(self.ttyWriter(), true);
+    self.rtmidi.start(10, &loop, midiCallback);
 
     while (!self.should_quit) {
         loop.pollEvent();
         while (loop.tryEvent()) |event| {
             try self.update(event);
-        }
-        // TODO: this isn't a good solution as we should interrupt
-        // loop.pollEvent() earlier if midi events come in earlier.
-        while (self.rtmidi.notify()) |event| {
-            try self.update(.{ .midi_event = event });
         }
 
         self.draw();
