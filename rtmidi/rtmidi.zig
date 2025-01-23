@@ -58,9 +58,10 @@ pub const RtMidi = struct {
         make(.ready);
         const err_file = std.fs.cwd().createFile("midi.err", .{}) catch null;
         writeErrFile(err_file, "midi init...\n", .{});
-        const rt = c.rtmidi_in_create(c.RTMIDI_API_UNSPECIFIED, "patchsoul", 100);
+        const rt = c.rtmidi_in_create_default();
         if (rt.*.ptr == null) {
-            writeErrFile(err_file, "midi init error!!\n", .{});
+            writeErrFile(err_file, "midi init error: {s}!!\n", .{rt.*.msg});
+            c.rtmidi_in_free(rt);
             return Error.could_not_init;
         }
         writeErrFile(err_file, "midi init complete.\n", .{});
@@ -213,12 +214,17 @@ const Port = struct {
         buffer[9] = @intCast('0' + ((port / 10) % 10));
         buffer[10] = @intCast('0' + (port % 10));
         const device = c.rtmidi_in_create(c.RTMIDI_API_UNSPECIFIED, &buffer, 128);
+        if (device.*.ptr == null) {
+            @panic("Port should have been openable");
+        }
         c.rtmidi_open_port(device, port, &buffer);
         return Self{ .name = name, .port = port, .device = device };
     }
 
     fn deinit(self: *Self) void {
         c.rtmidi_close_port(self.device);
+        c.rtmidi_in_free(self.device);
+        self.device = null;
         self.name.deinit();
     }
 
