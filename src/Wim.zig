@@ -84,8 +84,9 @@ pub fn update(self: *Wim, event: Event) !void {
         .midi => |midi| switch (midi) {
             .ports_updated => if (self.rtmidi) |rtmidi| {
                 const new_port_count = rtmidi.portCount();
+                defer self.last_port_count = new_port_count;
                 self.midi_connected = new_port_count > 0;
-                if (self.last_port_count < new_port_count) {
+                if (new_port_count > self.last_port_count) {
                     self.port_update_message.copyFromSlice("connected:  ") catch {};
                     const port_name = rtmidi.ports.items()[new_port_count - 1].name;
                     const max_len = @min(
@@ -93,10 +94,9 @@ pub fn update(self: *Wim, event: Event) !void {
                         port_name.count(),
                     );
                     self.port_update_message.addSlice(port_name.slice()[0..max_len]) catch {};
-                } else {
+                } else if (new_port_count < self.last_port_count) {
                     self.port_update_message.copyFromSlice("disconnected a midi device") catch {};
                 }
-                self.last_port_count = new_port_count;
             },
         },
         .winsize => |ws| {

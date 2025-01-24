@@ -168,6 +168,11 @@ pub const RtMidi = struct {
         const port_count = self.portCount();
         var result: ?Event = if (port_count != self.ports.count()) blk: {
             self.writeErr("seeing {d} midi ports, had {d} ports.\n", .{ port_count, self.ports.count() });
+            while (self.ports.count() > port_count) {
+                var port = self.ports.pop() orelse @panic("should have a port to pop");
+                self.writeErr("removing port {d} for now: {s}\n", .{ port.port, port.name.slice() });
+                port.deinit();
+            }
             break :blk Event.ports_updated;
         } else null;
 

@@ -19,3 +19,7 @@ fn cleanUp(wim: *Wim) void {
     wim.deinit();
     lib_common.cleanUp();
 }
+
+test "other dependencies (import using pub)" {
+    std.testing.refAllDecls(@This());
+}
