@@ -87,11 +87,14 @@ pub const Shtick = extern struct {
     }
 
     pub fn copyFromSlice(self: *Self, chars: []const u8) !void {
-        if (self.capacity() < chars.len) {
-            try self.setCapacity(chars.len);
+        if (self.capacity() >= chars.len) {
+            @memcpy(self.buffer()[0..chars.len], chars);
+            self.setCountUnchecked(chars.len);
+        } else {
+            const new_shtick = try Shtick.init(chars);
+            self.deinit();
+            self.* = new_shtick;
         }
-        @memcpy(self.buffer()[0..chars.len], chars);
-        self.setCountUnchecked(chars.len);
     }
 
     /// Initializes a `Shtick` that is just on the stack (no allocations on the heap).
@@ -591,6 +594,80 @@ test "allocated copyFromSlice shorter" {
     try std.testing.expectEqual(100, shtick.capacity()); // doesn't change
     try std.testing.expectEqual(16, shtick.count());
     try shtick.expectEqualsSlice(source_str);
+}
+
+test "allocated setCapacity" {
+    var shtick = try Shtick.withCapacity(50);
+    defer shtick.deinit();
+    try shtick.copyFromSlice("abcdefghijklmnopqrstuvwxyz1234567890");
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try std.testing.expectEqual(50, shtick.capacity());
+    try std.testing.expectEqual(36, shtick.count());
+
+    // Decreasing capacity might not change the count.
+    try shtick.setCapacity(36);
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try shtick.expectEqualsSlice("abcdefghijklmnopqrstuvwxyz1234567890");
+    try std.testing.expectEqual(36, shtick.capacity());
+    try std.testing.expectEqual(36, shtick.count());
+
+    // Decreasing capacity will change count if needed.
+    try shtick.setCapacity(26);
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try shtick.expectEqualsSlice("abcdefghijklmnopqrstuvwxyz");
+    try std.testing.expectEqual(26, shtick.capacity());
+    try std.testing.expectEqual(26, shtick.count());
+
+    // Increasing capacity shouldn't change count.
+    try shtick.setCapacity(30);
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try shtick.expectEqualsSlice("abcdefghijklmnopqrstuvwxyz");
+    try std.testing.expectEqual(30, shtick.capacity());
+    try std.testing.expectEqual(26, shtick.count());
+
+    // Decreasing to unallocated status.
+    try shtick.setCapacity(14);
+    try std.testing.expectEqual(false, shtick.isAllocated());
+    try shtick.expectEqualsSlice("abcdefghijklmn");
+    try std.testing.expectEqual(14, shtick.capacity());
+    try std.testing.expectEqual(14, shtick.count());
+}
+
+test "unallocated setCapacity" {
+    var shtick = Shtick.unallocated("abcdefghijklmn");
+    defer shtick.deinit();
+    try std.testing.expectEqual(false, shtick.isAllocated());
+    try std.testing.expectEqual(14, shtick.capacity());
+    try std.testing.expectEqual(14, shtick.count());
+
+    // Decreasing capacity will change count if needed.
+    try shtick.setCapacity(10);
+    try std.testing.expectEqual(false, shtick.isAllocated());
+    try shtick.expectEqualsSlice("abcdefghij");
+    try std.testing.expectEqual(14, shtick.capacity());
+    // This behavior is not necessary but we do it anyway.
+    try std.testing.expectEqual(10, shtick.count());
+
+    // Increasing capacity shouldn't change count.
+    try shtick.setCapacity(13);
+    try std.testing.expectEqual(false, shtick.isAllocated());
+    try shtick.expectEqualsSlice("abcdefghij");
+    try std.testing.expectEqual(14, shtick.capacity());
+    try std.testing.expectEqual(10, shtick.count());
+
+    // Decreasing capacity might not change the count.
+    try shtick.setCapacity(11);
+    try std.testing.expectEqual(false, shtick.isAllocated());
+    try shtick.expectEqualsSlice("abcdefghij");
+    try std.testing.expectEqual(14, shtick.capacity());
+    try std.testing.expectEqual(10, shtick.count());
+
+    // Increasing capacity can allocate.
+    try shtick.setCapacity(57);
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try shtick.expectEqualsSlice("abcdefghij");
+    try std.testing.expectEqual(57, shtick.capacity());
+    try std.testing.expectEqual(10, shtick.count());
 }
 
 test "copies all bytes of short shtick" {
