@@ -1,5 +1,6 @@
 const Event = @import("common.zig").Event;
 const RtMidi = @import("rtmidi").RtMidi;
+const lib = @import("lib");
 
 const std = @import("std");
 const vaxis = @import("vaxis");
@@ -17,6 +18,7 @@ rtmidi: ?RtMidi,
 /// Mouse event to be handled during draw cycle.
 mouse: ?vaxis.Mouse = null,
 midi_connected: bool = false,
+last_port_updated: lib.Shtick = lib.Shtick.unallocated(""),
 
 pub fn init(allocator: std.mem.Allocator) !Wim {
     return .{
