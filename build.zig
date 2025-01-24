@@ -23,6 +23,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // TODO: add other operating system configurations
+    if (target.result.os.tag == .linux) {
+        // TODO: add option for __UNIX_JACK__
+        rtmidi_zig.defineCMacro("__LINUX_ALSA__", "1");
+        rtmidi_zig.linkSystemLibrary("alsa");
+    }
     rtmidi_zig.linkLibC();
     rtmidi_zig.linkLibCpp();
     rtmidi_zig.addCSourceFiles(.{
