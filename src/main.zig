@@ -8,11 +8,14 @@ pub const panic = Wim.panic_handler;
 pub fn main() !void {
     // Initialize our application
     var wim = try Wim.init(lib_common.allocator);
-    defer {
-        wim.deinit();
-        lib_common.cleanUp();
-    }
+    defer cleanUp(&wim);
+    errdefer cleanUp(&wim);
 
     // Run the application
     try wim.run();
+}
+
+fn cleanUp(wim: *Wim) void {
+    wim.deinit();
+    lib_common.cleanUp();
 }

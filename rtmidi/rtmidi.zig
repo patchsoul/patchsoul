@@ -140,14 +140,11 @@ pub const RtMidi = struct {
     pub fn portName(self: *Self, port: u32) Shtick {
         std.debug.assert(self.rt.*.ptr != null);
         var buffer: [Shtick.max_count + 1]u8 = undefined;
-        var name_count: c_int = @intCast(buffer.len);
-        if (c.rtmidi_get_port_name(self.rt, port, &buffer, &name_count) != 0) {
+        var buffer_len: c_int = @intCast(buffer.len);
+        const name_count = c.rtmidi_get_port_name(self.rt, port, &buffer, &buffer_len);
+        if (name_count <= 0) {
             // TODO: log error
-            return Shtick.unallocated("?!");
-        }
-        if (name_count > 0) {
-            // ignore trailing zero byte.
-            name_count -= 1;
+            return Shtick.unallocated("BadPort@?!");
         }
         return Shtick.init(buffer[0..@intCast(name_count)]) catch {
             @panic("ran out of memory for port names");
@@ -167,14 +164,12 @@ pub const RtMidi = struct {
         if (self.update_port_counter < self.update_port_wait) {
             return;
         }
-        self.writeErr("updating midi ports...\n", .{});
         self.update_port_counter = 0;
         const port_count = self.portCount();
-        var result: ?Event = if (port_count != self.ports.count())
-            Event.ports_updated
-        else
-            null;
-        self.writeErr("seeing {d} ports, have {d} ports.\n", .{ port_count, self.ports.count() });
+        var result: ?Event = if (port_count != self.ports.count()) blk: {
+            self.writeErr("seeing {d} midi ports, had {d} ports.\n", .{ port_count, self.ports.count() });
+            break :blk Event.ports_updated;
+        } else null;
 
         for (0..port_count) |pusize| {
             const p: u32 = @intCast(pusize);
@@ -201,9 +196,9 @@ pub const RtMidi = struct {
             }
             result = Event.ports_updated;
             if (self.ports.count() != p) {
-                self.writeErr("got wrong ports after deleting some: {d} vs {d}\n", .{ self.ports.count(), p });
                 @panic("expected self.ports.count() == p");
             }
+            self.writeErr("got a new/updated port {d}: {s}\n", .{ p, port_name.slice() });
             self.ports.append(Port.init(port_name.moot(), p)) catch {
                 @panic("expected not a lot of ports open");
             };
@@ -211,7 +206,6 @@ pub const RtMidi = struct {
         if (result) |event| {
             callback(data, event);
         }
-        self.writeErr("done updating midi ports.\n", .{});
     }
 
     const Self = @This();
