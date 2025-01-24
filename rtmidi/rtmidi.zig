@@ -25,14 +25,12 @@ pub fn MidiEventCallback(comptime D: type) type {
     return *const fn (data: D, e: MidiEvent) void;
 }
 
-var running = std.atomic.Value(Running).init(.not_running);
+var running = lib.mutex.Mutex(Running).init(.not_running);
 
-fn is(r: Running) bool {
-    return running.load(.acquire) == r;
-}
-
-fn make(r: Running) void {
-    running.store(r, .release);
+fn make(run_value: Running) void {
+    running.acquire();
+    running.value = run_value;
+    running.release();
 }
 
 pub const RtMidi = struct {
@@ -52,10 +50,12 @@ pub const RtMidi = struct {
     err_file: ?std.fs.File,
 
     pub fn init() Error!Self {
-        if (!is(.not_running)) {
+        if (!running.tryAcquire() or running.value != .not_running) {
             @panic("don't use more than one RtMidi at a time");
         }
-        make(.ready);
+        running.value = .ready;
+        running.release();
+
         const err_file = std.fs.cwd().createFile("midi.err", .{}) catch null;
         writeErrFile(err_file, "midi init...\n", .{});
         const rt = c.rtmidi_in_create_default();
@@ -72,7 +72,8 @@ pub const RtMidi = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.stop();
+        self.stopWith(.not_running);
+        self.ports.deinit();
         c.rtmidi_in_free(self.rt);
         self.rt = null;
         if (self.err_file) |file| {
@@ -94,15 +95,20 @@ pub const RtMidi = struct {
     }
 
     pub fn stop(self: *Self) void {
-        _ = self;
-        std.debug.assert(is(.running));
-        make(.not_running);
+        self.stopWith(.ready);
+    }
+
+    fn stopWith(self: *Self, run_value: Running) void {
+        self.writeErr("stopping midi...\n", .{});
+        make(run_value);
+        self.writeErr("midi stopped.\n", .{});
     }
 
     // TODO: add a `context: anytype` that we pass in to the function.
     pub fn start(self: *Self, sleep_time_ns: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
         self.writeErr("midi starting...\n", .{});
         std.debug.assert(self.rt.*.ptr != null);
+
         make(.running);
         _ = std.Thread.spawn(.{}, midiLoop, .{ self, sleep_time_ns, data, callback }) catch {
             @panic("couldn't spawn RtMidi thread");
@@ -110,12 +116,19 @@ pub const RtMidi = struct {
     }
 
     fn midiLoop(self: *Self, sleep_time_ns: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
-        while (is(.running)) {
+        while (true) {
+            running.acquire();
+            if (running.value != .running) {
+                running.release();
+                break;
+            }
             self.maybeUpdatePorts(data, callback);
             self.notify(data, callback);
+            running.release();
+
             std.time.sleep(sleep_time_ns);
         }
-        self.writeErr("midi stopped.\n", .{});
+        self.writeErr("midi loop stopped.\n", .{});
     }
 
     pub inline fn portCount(self: *const Self) u32 {

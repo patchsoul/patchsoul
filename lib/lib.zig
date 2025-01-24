@@ -3,6 +3,7 @@ pub const owned_list = @import("owned_list.zig");
 pub const Shtick = @import("shtick.zig").Shtick;
 pub const testing = @import("testing.zig");
 pub const file = @import("file.zig");
+pub const mutex = @import("mutex.zig");
 
 const std = @import("std");
 
