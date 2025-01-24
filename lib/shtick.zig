@@ -97,6 +97,23 @@ pub const Shtick = extern struct {
         }
     }
 
+    pub fn add(self: *Self, other: Self) !void {
+        try self.addSlice(other.slice());
+    }
+
+    pub fn addSlice(self: *Self, chars: []const u8) !void {
+        const current_count = self.count();
+        if (chars.len > max_count or current_count + chars.len > max_count) {
+            return Error.string_too_long;
+        }
+        const new_count = current_count + chars.len;
+        if (self.capacity() < new_count) {
+            try self.setCapacity(new_count);
+        }
+        @memcpy(self.buffer()[current_count..new_count], chars);
+        self.setCountUnchecked(new_count);
+    }
+
     /// Initializes a `Shtick` that is just on the stack (no allocations on the heap).
     /// For compile-time-known `chars` only.  For anything else, prefer `init` and
     /// just defer `deinit` to be safe.  If you ever do `self.copyFrom` with the shtick
@@ -551,6 +568,19 @@ test "unallocated copyFromSlice longer unallocated" {
     try shtick.expectEqualsSlice(source_str);
 }
 
+test "unallocated copyFromSlice needs allocated size" {
+    var shtick = Shtick.unallocated("q");
+    defer shtick.deinit();
+    const source_str = "abcdefghijklmno";
+
+    try shtick.copyFromSlice(source_str);
+
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try std.testing.expectEqual(15, shtick.capacity());
+    try std.testing.expectEqual(15, shtick.count());
+    try shtick.expectEqualsSlice(source_str);
+}
+
 test "allocated copyFromSlice longer needing to increase capacity" {
     var shtick = try Shtick.init("this is long but not as long");
     defer shtick.deinit();
@@ -586,14 +616,76 @@ test "allocated copyFromSlice shorter" {
     defer shtick.deinit();
     try shtick.copyFromSlice("this is long but not as long");
 
-    const source_str = "this is shorter.";
+    const source_str = "this is short.";
     try shtick.copyFromSlice(source_str);
 
     try shtick.copyFromSlice(source_str);
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(100, shtick.capacity()); // doesn't change
-    try std.testing.expectEqual(16, shtick.count());
+    try std.testing.expectEqual(14, shtick.count());
     try shtick.expectEqualsSlice(source_str);
+}
+
+test "unallocated addSlice still unallocated" {
+    var shtick = Shtick.unallocated("l123");
+
+    try shtick.addSlice("abc");
+
+    try std.testing.expectEqual(false, shtick.isAllocated());
+    try std.testing.expectEqual(14, shtick.capacity());
+    try std.testing.expectEqual(7, shtick.count());
+    try shtick.expectEqualsSlice("l123abc");
+}
+
+test "unallocated addSlice to max unallocated" {
+    var shtick = Shtick.unallocated("abcdefghijklm");
+
+    try shtick.addSlice("N");
+
+    try std.testing.expectEqual(false, shtick.isAllocated());
+    try std.testing.expectEqual(14, shtick.capacity());
+    try std.testing.expectEqual(14, shtick.count());
+    try shtick.expectEqualsSlice("abcdefghijklmN");
+}
+
+test "unallocated addSlice needs to be allocation" {
+    var shtick = Shtick.unallocated("A");
+    defer shtick.deinit();
+
+    try shtick.addSlice("bcdefghijklmno");
+
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try std.testing.expectEqual(15, shtick.capacity());
+    try std.testing.expectEqual(15, shtick.count());
+    try shtick.expectEqualsSlice("Abcdefghijklmno");
+}
+
+test "allocated addSlice needing to increase capacity" {
+    var shtick = try Shtick.init("this is a great start");
+    defer shtick.deinit();
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try std.testing.expectEqual(21, shtick.capacity());
+    try std.testing.expectEqual(21, shtick.count());
+
+    try shtick.addSlice(" but we'll need to increase capacity");
+
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try std.testing.expectEqual(57, shtick.capacity());
+    try std.testing.expectEqual(57, shtick.count());
+    try shtick.expectEqualsSlice("this is a great start but we'll need to increase capacity");
+}
+
+test "allocated addSlice without changing capacity" {
+    var shtick = try Shtick.withCapacity(100);
+    defer shtick.deinit();
+    try shtick.addSlice("this is a great start, too");
+
+    try shtick.addSlice(", and no capacity changes needed");
+
+    try std.testing.expectEqual(true, shtick.isAllocated());
+    try std.testing.expectEqual(100, shtick.capacity()); // doesn't change
+    try std.testing.expectEqual(58, shtick.count());
+    try shtick.expectEqualsSlice("this is a great start, too, and no capacity changes needed");
 }
 
 test "allocated setCapacity" {

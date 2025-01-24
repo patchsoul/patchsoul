@@ -18,7 +18,9 @@ rtmidi: ?RtMidi,
 /// Mouse event to be handled during draw cycle.
 mouse: ?vaxis.Mouse = null,
 midi_connected: bool = false,
-last_port_updated: lib.Shtick = lib.Shtick.unallocated(""),
+last_port_count: usize = 0,
+port_update_message: lib.Shtick,
+needs_full_redraw: bool = true,
 
 pub fn init(allocator: std.mem.Allocator) !Wim {
     return .{
@@ -26,6 +28,9 @@ pub fn init(allocator: std.mem.Allocator) !Wim {
         .tty = try vaxis.Tty.init(),
         .vx = try vaxis.init(allocator, .{}),
         .rtmidi = RtMidi.init() catch null,
+        .port_update_message = lib.Shtick.withCapacity(100) catch {
+            @panic("should have enough capacity");
+        },
     };
 }
 
@@ -77,11 +82,27 @@ pub fn update(self: *Wim, event: Event) !void {
         },
         .mouse => |mouse| self.mouse = mouse,
         .midi => |midi| switch (midi) {
-            .ports_updated => {
-                self.midi_connected = if (self.rtmidi) |rtmidi| rtmidi.portCount() > 0 else false;
+            .ports_updated => if (self.rtmidi) |rtmidi| {
+                const new_port_count = rtmidi.portCount();
+                self.midi_connected = new_port_count > 0;
+                if (self.last_port_count < new_port_count) {
+                    self.port_update_message.copyFromSlice("connected:  ") catch {};
+                    const port_name = rtmidi.ports.items()[new_port_count - 1].name;
+                    const max_len = @min(
+                        self.port_update_message.capacity() - self.port_update_message.count(),
+                        port_name.count(),
+                    );
+                    self.port_update_message.addSlice(port_name.slice()[0..max_len]) catch {};
+                } else {
+                    self.port_update_message.copyFromSlice("disconnected a midi device") catch {};
+                }
+                self.last_port_count = new_port_count;
             },
         },
-        .winsize => |ws| try self.vx.resize(self.allocator, self.ttyWriter(), ws),
+        .winsize => |ws| {
+            try self.vx.resize(self.allocator, self.ttyWriter(), ws);
+            self.needs_full_redraw = true;
+        },
         else => {},
     }
 }
@@ -89,15 +110,18 @@ pub fn update(self: *Wim, event: Event) !void {
 pub fn draw(self: *Wim) void {
     const window = self.vx.window();
 
-    window.clear();
+    if (self.needs_full_redraw) {
+        window.clear();
+    }
     self.vx.setMouseShape(.default);
 
     if (self.midi_connected) {
-        self.drawMidiConnected(window);
+        try self.drawMidiConnected(window);
     }
+    try self.drawPortConnected(window);
 }
 
-fn drawMidiConnected(self: *Wim, window: vaxis.Window) void {
+fn drawMidiConnected(self: *Wim, window: vaxis.Window) !void {
     const msg = "midi ports connected";
 
     const child = window.child(.{
@@ -117,6 +141,19 @@ fn drawMidiConnected(self: *Wim, window: vaxis.Window) void {
     } else .{};
 
     _ = try child.printSegment(.{ .text = msg, .style = style }, .{});
+}
+
+fn drawPortConnected(self: *Wim, window: vaxis.Window) !void {
+    const msg = self.port_update_message.slice();
+
+    const child = window.child(.{
+        .x_off = 0,
+        .y_off = window.height - 2,
+        .width = .{ .limit = self.port_update_message.capacity() },
+        .height = .{ .limit = 1 },
+    });
+
+    _ = try child.printSegment(.{ .text = msg }, .{});
 }
 
 fn ttyWriter(self: *Wim) std.io.AnyWriter {
