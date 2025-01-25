@@ -68,6 +68,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe_unit_tests.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
+    exe_unit_tests.root_module.addImport("rtmidi", rtmidi);
+    exe_unit_tests.root_module.addImport("lib", lib);
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
     // This *creates* a Run step in the build graph, to be executed when another

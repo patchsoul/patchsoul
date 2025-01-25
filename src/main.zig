@@ -1,5 +1,6 @@
 const lib_common = @import("lib").common;
-const Wim = @import("Wim.zig");
+pub const Wim = @import("Wim.zig");
+pub const Notification = @import("Notification.zig");
 
 const std = @import("std");
 

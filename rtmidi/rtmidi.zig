@@ -115,6 +115,7 @@ pub const RtMidi = struct {
         };
     }
 
+    // TODO: pass a sleep_duration not a sleep_time_ns
     fn midiLoop(self: *Self, sleep_time_ns: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
         while (true) {
             running.acquire();
@@ -126,7 +127,7 @@ pub const RtMidi = struct {
             self.notify(data, callback);
             running.release();
 
-            std.time.sleep(sleep_time_ns);
+            lib.time.sleep(.{ .ns = sleep_time_ns });
         }
         self.writeErr("midi loop stopped.\n", .{});
     }
