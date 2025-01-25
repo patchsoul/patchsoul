@@ -16,8 +16,6 @@ pub fn build(b: *std.Build) void {
     var rtmidi = addRtMidiModule(b, target, optimize);
     rtmidi.addImport("lib", lib);
 
-    const sdl = addSdlModule(b, target, optimize);
-
     const vaxis = addVaxisDependency(b, target, optimize);
 
     const exe = b.addExecutable(.{
@@ -28,7 +26,6 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("lib", lib);
     exe.root_module.addImport("rtmidi", rtmidi);
-    exe.root_module.addImport("sdl", sdl);
     exe.root_module.addImport("vaxis", vaxis);
 
     b.installArtifact(exe);
@@ -114,26 +111,6 @@ fn addRtMidiModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
     rtmidi.addIncludePath(rtmidi_dep_c.path(""));
     rtmidi.linkLibrary(rtmidi_zig);
     return rtmidi;
-}
-
-fn addSdlModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
-    const sdl_zig = b.addStaticLibrary(.{
-        .name = "sdl-zig",
-        .root_source_file = b.path("sdl/sdl.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    // TODO: add other operating system configurations
-    if (target.result.os.tag == .linux) {
-        sdl_zig.linkSystemLibrary("SDL2");
-        sdl_zig.linkLibC();
-    }
-    b.installArtifact(sdl_zig);
-    const sdl = b.addModule("sdl", .{
-        .root_source_file = b.path("sdl/sdl.zig"),
-    });
-    sdl.linkLibrary(sdl_zig);
-    return sdl;
 }
 
 fn addVaxisDependency(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
