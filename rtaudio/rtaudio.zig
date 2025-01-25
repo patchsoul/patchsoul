@@ -11,12 +11,12 @@ const c = @cImport({
     @cInclude("rtaudio_c.h");
 });
 
-pub const Sample = struct {
+pub const AudioSample = struct {
     left: f32,
     right: f32,
 };
 
-pub const AudioCallback = *const fn (data: *anyopaque, samples: []Sample) void;
+pub const AudioCallback = *const fn (data: *anyopaque, samples: []AudioSample) void;
 pub const AudioCallable = struct { data: *anyopaque, callback: AudioCallback };
 
 const Running = enum(u8) {
@@ -42,7 +42,7 @@ pub fn rtAudioCallback(
     status: c.rtaudio_stream_status_t,
     user_data: ?*anyopaque,
 ) callconv(.C) c_int {
-    const out_sample: *[math.maxInt(u31)]Sample = @alignCast(@ptrCast(out));
+    const out_sample: *[math.maxInt(u31)]AudioSample = @alignCast(@ptrCast(out));
     const samples = out_sample[0..frame_count];
     _ = in;
     _ = stream_time;
@@ -73,6 +73,7 @@ pub const RtAudio = struct {
     pub const Error = error{
         could_not_start,
     };
+    pub const Sample = AudioSample;
     pub const Callback = AudioCallback;
     pub const Callable = AudioCallable;
     rt: c.rtaudio_t,
@@ -100,6 +101,10 @@ pub const RtAudio = struct {
         return Self{ .rt = rt };
     }
 
+    pub fn log(comptime format: []const u8, data: anytype) void {
+        writeLog(format, data);
+    }
+
     pub fn deinit(self: *Self) void {
         self.stopWith(.not_running);
         c.rtaudio_destroy(self.rt);
@@ -121,7 +126,7 @@ pub const RtAudio = struct {
             .first_channel = 0,
         };
         var frame_count: c_uint = 256;
-        writeLog("requesting {d} frames...\n", .{frame_count});
+        writeLog("opening stream, requesting {d} frames...\n", .{frame_count});
         if (c.rtaudio_open_stream(
             self.rt,
             &output,
@@ -134,9 +139,15 @@ pub const RtAudio = struct {
             null,
             rtErrCallback,
         ) != 0) {
+            writeLog("failed to open the stream\n", .{});
             return Error.could_not_start;
         }
-        writeLog("got {d} frames.\n", .{frame_count});
+        writeLog("got {d} frames; starting the stream...\n", .{frame_count});
+        if (c.rtaudio_start_stream(self.rt) != 0) {
+            writeLog("failed to start the stream\n", .{});
+            return Error.could_not_start;
+        }
+        writeLog("it's go time.\n", .{});
     }
 
     pub fn stop(self: *Self) void {
@@ -145,6 +156,9 @@ pub const RtAudio = struct {
 
     fn stopWith(self: *Self, run_value: Running) void {
         writeLog("stopping audio...\n", .{});
+        if (c.rtaudio_abort_stream(self.rt) != 0) {
+            writeLog("error aborting the stream\n", .{});
+        }
         c.rtaudio_close_stream(self.rt);
         make(run_value);
         writeLog("audio stopped.\n", .{});

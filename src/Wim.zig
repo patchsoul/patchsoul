@@ -1,14 +1,16 @@
 const Event = @import("event.zig").Event;
+const lib = @import("lib");
 const RtAudio = @import("rtaudio").RtAudio;
 const RtMidi = @import("rtmidi").RtMidi;
-const lib = @import("lib");
+const vaxis = @import("vaxis");
 
 const std = @import("std");
-const vaxis = @import("vaxis");
+const math = std.math;
 
 /// This will reset the terminal if panics occur.
 pub const panic_handler = vaxis.panic_handler;
 
+const Sample = RtAudio.Sample;
 const Wim = @This();
 
 allocator: std.mem.Allocator,
@@ -24,6 +26,7 @@ last_port_count: usize = 0,
 port_update_message: lib.Shtick,
 needs_full_redraw: bool = true,
 log_file: ?std.fs.File,
+phase: f32 = 0.0,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     return .{
@@ -56,6 +59,18 @@ fn midiCallback(loop: *vaxis.Loop(Event), event: RtMidi.Event) void {
     loop.postEvent(.{ .midi = event });
 }
 
+fn sinAndCos(data: *anyopaque, samples: []Sample) void {
+    const phase: *f32 = @alignCast(@ptrCast(data));
+    for (samples) |*sample| {
+        sample.left = math.sin(phase.*);
+        sample.right = math.cos(phase.*);
+        phase.* += math.tau * 440.0 / 44_100.0;
+        if (phase.* >= math.pi) {
+            phase.* -= math.tau;
+        }
+    }
+}
+
 pub fn run(self: *Self) !void {
     var loop: vaxis.Loop(Event) = .{
         .tty = &self.tty,
@@ -69,8 +84,12 @@ pub fn run(self: *Self) !void {
     if (self.rtmidi) |*rtmidi| {
         rtmidi.start(.{ .ms = 1 }, &loop, midiCallback);
     }
+    self.rtaudio.callable = .{
+        .data = &self.phase,
+        .callback = sinAndCos,
+    };
     self.rtaudio.start() catch {
-        @panic("need audio for this utility, can't start RtAudio");
+        @panic("can't start RtAudio, but this is required");
     };
     defer self.rtaudio.stop();
 
