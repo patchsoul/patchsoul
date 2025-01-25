@@ -89,10 +89,8 @@ pub const RtMidi = struct {
         }
     }
 
-    fn writeErr(self: *Self, comptime format: []const u8, data: anytype) void {
-        if (self.err_file) |file| {
-            std.fmt.format(file.writer(), format, data) catch {};
-        }
+    inline fn writeErr(self: *Self, comptime format: []const u8, data: anytype) void {
+        writeErrFile(self.err_file, format, data);
     }
 
     pub fn stop(self: *Self) void {

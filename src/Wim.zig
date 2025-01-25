@@ -1,4 +1,4 @@
-const Event = @import("common.zig").Event;
+const Event = @import("event.zig").Event;
 const RtMidi = @import("rtmidi").RtMidi;
 const lib = @import("lib");
 
