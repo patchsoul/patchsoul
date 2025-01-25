@@ -1,7 +1,6 @@
 const Event = @import("event.zig").Event;
-const lib = @import("lib");
 const RtMidi = @import("rtmidi").RtMidi;
-const SDL = @import("sdl").SDL;
+const lib = @import("lib");
 
 const std = @import("std");
 const vaxis = @import("vaxis");
