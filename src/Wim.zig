@@ -23,6 +23,7 @@ last_port_count: usize = 0,
 port_update_message: lib.Shtick,
 needs_full_redraw: bool = true,
 log_file: ?std.fs.File,
+sdl: SDL,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     return .{
@@ -34,15 +35,16 @@ pub fn init(allocator: std.mem.Allocator) !Self {
             @panic("should have enough capacity");
         },
         .log_file = std.fs.cwd().createFile("wim.out", .{}) catch null,
+        .sdl = SDL{},
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.vx.deinit(self.allocator, self.ttyWriter());
-    self.tty.deinit();
     if (self.rtmidi) |*rtmidi| {
         rtmidi.deinit();
     }
+    self.vx.deinit(self.allocator, self.ttyWriter());
+    self.tty.deinit();
     if (self.log_file) |file| {
         file.close();
         self.log_file = null;
@@ -66,6 +68,7 @@ pub fn run(self: *Self) !void {
     if (self.rtmidi) |*rtmidi| {
         rtmidi.start(.{ .ms = 1 }, &loop, midiCallback);
     }
+    try self.sdl.start();
 
     while (!self.should_quit) {
         loop.pollEvent();
@@ -79,6 +82,8 @@ pub fn run(self: *Self) !void {
         try self.vx.render(buffered.writer().any());
         try buffered.flush();
     }
+
+    self.sdl.stop();
 }
 
 pub fn update(self: *Self, event: Event) !void {

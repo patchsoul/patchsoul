@@ -20,9 +20,9 @@ fn mixSdlAudio(sdl: *SDL, u8_stream: *u8, bytes: c_int) void {
     sdl.callback(sdl.data, stereo_stream[0..stereo_count]);
 }
 
-pub const AudioCallback = *const fn (data: *anyopaque, samples: []StereoSample) void;
+pub const AudioCallback = *const fn (data: ?*anyopaque, samples: []StereoSample) void;
 
-fn emptyCallback(data: *anyopaque, samples: []StereoSample) void {
+fn emptyCallback(data: ?*anyopaque, samples: []StereoSample) void {
     _ = data;
     for (samples) |*sample| {
         sample.left = 0.0;
@@ -33,7 +33,7 @@ fn emptyCallback(data: *anyopaque, samples: []StereoSample) void {
 pub const SDL = struct {
     frequency: audio.Frequency = audio.Frequency.Hz_44100,
     samples: u12 = 256,
-    data: *anyopaque = null,
+    data: ?*anyopaque = null,
     callback: AudioCallback = emptyCallback,
 
     pub fn start(self: *Self) !void {
