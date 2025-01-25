@@ -21,8 +21,9 @@ midi_connected: bool = false,
 last_port_count: usize = 0,
 port_update_message: lib.Shtick,
 needs_full_redraw: bool = true,
+log_file: ?std.fs.File,
 
-pub fn init(allocator: std.mem.Allocator) !Wim {
+pub fn init(allocator: std.mem.Allocator) !Self {
     return .{
         .allocator = allocator,
         .tty = try vaxis.Tty.init(),
@@ -31,14 +32,19 @@ pub fn init(allocator: std.mem.Allocator) !Wim {
         .port_update_message = lib.Shtick.withCapacity(100) catch {
             @panic("should have enough capacity");
         },
+        .log_file = std.fs.cwd().createFile("wim.out", .{}) catch null,
     };
 }
 
-pub fn deinit(self: *Wim) void {
+pub fn deinit(self: *Self) void {
     self.vx.deinit(self.allocator, self.ttyWriter());
     self.tty.deinit();
     if (self.rtmidi) |*rtmidi| {
         rtmidi.deinit();
+    }
+    if (self.log_file) |file| {
+        file.close();
+        self.log_file = null;
     }
 }
 
@@ -46,7 +52,7 @@ fn midiCallback(loop: *vaxis.Loop(Event), event: RtMidi.Event) void {
     loop.postEvent(.{ .midi = event });
 }
 
-pub fn run(self: *Wim) !void {
+pub fn run(self: *Self) !void {
     var loop: vaxis.Loop(Event) = .{
         .tty = &self.tty,
         .vaxis = &self.vx,
@@ -74,7 +80,7 @@ pub fn run(self: *Wim) !void {
     }
 }
 
-pub fn update(self: *Wim, event: Event) !void {
+pub fn update(self: *Self, event: Event) !void {
     switch (event) {
         .key_press => |key| {
             if (key.matches('c', .{ .ctrl = true }))
@@ -98,6 +104,12 @@ pub fn update(self: *Wim, event: Event) !void {
                     self.port_update_message.copyFromSlice("disconnected a midi device") catch {};
                 }
             },
+            .note_on => |note_on| {
+                self.writeLog("note on {d}\n", .{note_on.pitch});
+            },
+            .note_off => |note_off| {
+                self.writeLog("note off {d}\n", .{note_off.pitch});
+            },
         },
         .winsize => |ws| {
             try self.vx.resize(self.allocator, self.ttyWriter(), ws);
@@ -106,8 +118,7 @@ pub fn update(self: *Wim, event: Event) !void {
         else => {},
     }
 }
-
-pub fn draw(self: *Wim) void {
+pub fn draw(self: *Self) void {
     const window = self.vx.window();
 
     if (self.needs_full_redraw) {
@@ -121,7 +132,7 @@ pub fn draw(self: *Wim) void {
     try self.drawPortConnected(window);
 }
 
-fn drawMidiConnected(self: *Wim, window: vaxis.Window) !void {
+fn drawMidiConnected(self: *Self, window: vaxis.Window) !void {
     const msg = "midi ports connected";
 
     const child = window.child(.{
@@ -143,7 +154,7 @@ fn drawMidiConnected(self: *Wim, window: vaxis.Window) !void {
     _ = try child.printSegment(.{ .text = msg, .style = style }, .{});
 }
 
-fn drawPortConnected(self: *Wim, window: vaxis.Window) !void {
+fn drawPortConnected(self: *Self, window: vaxis.Window) !void {
     const msg = self.port_update_message.slice();
 
     const child = window.child(.{
@@ -156,6 +167,14 @@ fn drawPortConnected(self: *Wim, window: vaxis.Window) !void {
     _ = try child.printSegment(.{ .text = msg }, .{});
 }
 
-fn ttyWriter(self: *Wim) std.io.AnyWriter {
+fn ttyWriter(self: *Self) std.io.AnyWriter {
     return self.tty.anyWriter();
 }
+
+inline fn writeLog(self: *Self, comptime format: []const u8, data: anytype) void {
+    if (self.log_file) |file| {
+        std.fmt.format(file.writer(), format, data) catch {};
+    }
+}
+
+const Self = @This();

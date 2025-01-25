@@ -1,4 +1,4 @@
 *.swp
 /.zig-cache
 /zig-out
-midi.err
+*.out

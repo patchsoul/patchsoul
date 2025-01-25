@@ -14,6 +14,17 @@ const c = @cImport({
 pub const MidiEvent = union(enum) {
     /// Ports were connected or disconnected.
     ports_updated,
+    note_on: Note,
+    note_off: Note,
+
+    pub const Note = MidiNote;
+};
+
+pub const MidiNote = struct {
+    port: u8,
+    pitch: u8,
+    // How fast to hit (or release) a note.
+    velocity: u8,
 };
 
 const Running = enum(u8) {
@@ -48,7 +59,7 @@ pub const RtMidi = struct {
     update_port_counter: u16 = 0,
     ports: OwnedPorts = OwnedPorts.init(),
     rt: c.RtMidiInPtr,
-    err_file: ?std.fs.File,
+    log_file: ?std.fs.File,
 
     pub fn init() Error!Self {
         if (!running.tryAcquire() or running.value != .not_running) {
@@ -57,40 +68,41 @@ pub const RtMidi = struct {
         running.value = .ready;
         running.release();
 
-        const err_file = std.fs.cwd().createFile("midi.err", .{}) catch null;
-        writeErrFile(err_file, "midi init...\n", .{});
+        const log_file = std.fs.cwd().createFile("rtmidi.out", .{}) catch null;
+        writeLogFile(log_file, "midi init...\n", .{});
         const rt = c.rtmidi_in_create_default();
         if (rt.*.ptr == null) {
-            writeErrFile(err_file, "midi init error: {s}!!\n", .{rt.*.msg});
+            writeLogFile(log_file, "midi init error: {s}!!\n", .{rt.*.msg});
             c.rtmidi_in_free(rt);
             return Error.could_not_init;
         }
-        writeErrFile(err_file, "midi init complete.\n", .{});
+        writeLogFile(log_file, "midi init complete.\n", .{});
         return Self{
-            .err_file = err_file,
+            .log_file = log_file,
             .rt = rt,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.stopWith(.not_running);
+        // TODO: For some reason we are having trouble synchronizing the stop and leaking memory...
         self.ports.deinit();
         c.rtmidi_in_free(self.rt);
         self.rt = null;
-        if (self.err_file) |file| {
+        if (self.log_file) |file| {
             file.close();
-            self.err_file = null;
+            self.log_file = null;
         }
     }
 
-    fn writeErrFile(err_file: ?std.fs.File, comptime format: []const u8, data: anytype) void {
-        if (err_file) |file| {
+    fn writeLogFile(log_file: ?std.fs.File, comptime format: []const u8, data: anytype) void {
+        if (log_file) |file| {
             std.fmt.format(file.writer(), format, data) catch {};
         }
     }
 
-    inline fn writeErr(self: *Self, comptime format: []const u8, data: anytype) void {
-        writeErrFile(self.err_file, format, data);
+    inline fn writeLog(self: *Self, comptime format: []const u8, data: anytype) void {
+        writeLogFile(self.log_file, format, data);
     }
 
     pub fn stop(self: *Self) void {
@@ -98,14 +110,14 @@ pub const RtMidi = struct {
     }
 
     fn stopWith(self: *Self, run_value: Running) void {
-        self.writeErr("stopping midi...\n", .{});
+        self.writeLog("stopping midi...\n", .{});
         make(run_value);
-        self.writeErr("midi stopped.\n", .{});
+        self.writeLog("midi stopped.\n", .{});
     }
 
     // TODO: add a `context: anytype` that we pass in to the function.
     pub fn start(self: *Self, sleep_duration: time.Duration, data: anytype, callback: Callback(@TypeOf(data))) void {
-        self.writeErr("midi starting...\n", .{});
+        self.writeLog("midi starting...\n", .{});
         std.debug.assert(self.rt.*.ptr != null);
 
         make(.running);
@@ -127,7 +139,7 @@ pub const RtMidi = struct {
 
             time.sleep(sleep_duration);
         }
-        self.writeErr("midi loop stopped.\n", .{});
+        self.writeLog("midi loop stopped.\n", .{});
     }
 
     pub inline fn portCount(self: *const Self) u32 {
@@ -166,10 +178,10 @@ pub const RtMidi = struct {
         self.update_port_counter = 0;
         const port_count = self.portCount();
         var result: ?Event = if (port_count != self.ports.count()) blk: {
-            self.writeErr("seeing {d} midi ports, had {d} ports.\n", .{ port_count, self.ports.count() });
+            self.writeLog("seeing {d} midi ports, had {d} ports.\n", .{ port_count, self.ports.count() });
             while (self.ports.count() > port_count) {
                 var port = self.ports.pop() orelse @panic("should have a port to pop");
-                self.writeErr("removing port {d} for now: {s}\n", .{ port.port, port.name.slice() });
+                self.writeLog("removing port {d} for now: {s}\n", .{ port.port, port.name.slice() });
                 port.deinit();
             }
             break :blk Event.ports_updated;
@@ -202,7 +214,7 @@ pub const RtMidi = struct {
             if (self.ports.count() != p) {
                 @panic("expected self.ports.count() == p");
             }
-            self.writeErr("got a new/updated port {d}: {s}\n", .{ p, port_name.slice() });
+            self.writeLog("got a new/updated port {d}: {s}\n", .{ p, port_name.slice() });
             self.ports.append(Port.init(port_name.moot(), p)) catch {
                 @panic("expected not a lot of ports open");
             };
@@ -240,8 +252,28 @@ const Port = struct {
     }
 
     fn notify(self: *Self) ?MidiEvent {
-        // TODO
-        _ = self;
+        var message: [64]u8 = undefined;
+        var message_count = message.len;
+        const timestamp = c.rtmidi_in_get_message(self.device, &message, &message_count);
+        _ = timestamp;
+        switch (message_count) {
+            3 => switch (message[0]) {
+                144 => return .{ .note_on = .{
+                    .port = @intCast(self.port),
+                    .pitch = message[1],
+                    .velocity = message[2],
+                } },
+                128 => return .{ .note_off = .{
+                    .port = @intCast(self.port),
+                    .pitch = message[1],
+                    .velocity = message[2],
+                } },
+                else => {},
+            },
+            0 => return null,
+            else => {},
+        }
+        // TODO: log unknown midi event
         return null;
     }
 
