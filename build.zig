@@ -13,6 +13,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    var rtaudio = addRtAudioModule(b, target, optimize);
+    rtaudio.addImport("lib", lib);
+
     var rtmidi = addRtMidiModule(b, target, optimize);
     rtmidi.addImport("lib", lib);
 
@@ -25,6 +28,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("lib", lib);
+    exe.root_module.addImport("rtaudio", rtaudio);
     exe.root_module.addImport("rtmidi", rtmidi);
     exe.root_module.addImport("vaxis", vaxis);
 
@@ -36,6 +40,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe_unit_tests.root_module.addImport("lib", lib);
+    exe_unit_tests.root_module.addImport("rtaudio", rtaudio);
     exe_unit_tests.root_module.addImport("rtmidi", rtmidi);
     exe_unit_tests.root_module.addImport("vaxis", vaxis);
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
@@ -76,6 +81,41 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
     test_step.dependOn(&run_lib_unit_tests.step);
+}
+
+fn addRtAudioModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const rtaudio_dep_c = b.dependency("rtaudio", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const rtaudio_zig = b.addStaticLibrary(.{
+        .name = "rtaudio-zig",
+        .root_source_file = b.path("rtaudio/rtaudio.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    // TODO: add other operating system configurations
+    if (target.result.os.tag == .linux) {
+        // TODO: add option for __UNIX_JACK__
+        rtaudio_zig.defineCMacro("__LINUX_ALSA__", "1");
+        rtaudio_zig.linkSystemLibrary("alsa");
+    }
+    rtaudio_zig.linkLibC();
+    rtaudio_zig.linkLibCpp();
+    rtaudio_zig.addCSourceFiles(.{
+        .root = rtaudio_dep_c.path(""),
+        .files = &.{ "rtaudio_c.cpp", "RtAudio.cpp" },
+    });
+    rtaudio_zig.installHeadersDirectory(rtaudio_dep_c.path(""), "", .{
+        .include_extensions = &.{ "rtaudio_c.h", "RtAudio.h" },
+    });
+    b.installArtifact(rtaudio_zig);
+    const rtaudio = b.addModule("rtaudio", .{
+        .root_source_file = b.path("rtaudio/rtaudio.zig"),
+    });
+    rtaudio.addIncludePath(rtaudio_dep_c.path(""));
+    rtaudio.linkLibrary(rtaudio_zig);
+    return rtaudio;
 }
 
 fn addRtMidiModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {

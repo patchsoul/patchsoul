@@ -1,4 +1,5 @@
 const Event = @import("event.zig").Event;
+const RtAudio = @import("rtaudio").RtAudio;
 const RtMidi = @import("rtmidi").RtMidi;
 const lib = @import("lib");
 
@@ -14,6 +15,7 @@ allocator: std.mem.Allocator,
 should_quit: bool = false,
 tty: vaxis.Tty,
 vx: vaxis.Vaxis,
+rtaudio: RtAudio,
 rtmidi: ?RtMidi,
 /// Mouse event to be handled during draw cycle.
 mouse: ?vaxis.Mouse = null,
@@ -28,6 +30,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         .allocator = allocator,
         .tty = try vaxis.Tty.init(),
         .vx = try vaxis.init(allocator, .{}),
+        .rtaudio = RtAudio.init(),
         .rtmidi = RtMidi.init() catch null,
         .port_update_message = lib.Shtick.withCapacity(100) catch {
             @panic("should have enough capacity");
@@ -42,6 +45,7 @@ pub fn deinit(self: *Self) void {
     if (self.rtmidi) |*rtmidi| {
         rtmidi.deinit();
     }
+    self.rtaudio.deinit();
     if (self.log_file) |file| {
         file.close();
         self.log_file = null;

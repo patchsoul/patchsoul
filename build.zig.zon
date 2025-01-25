@@ -3,6 +3,10 @@
     .version = "0.0.0",
     //.minimum_zig_version = "0.11.0",
     .dependencies = .{
+        .rtaudio = .{
+            .url = "https://github.com/thestk/rtaudio/archive/refs/tags/6.0.1.tar.gz",
+            .hash = "1220530f14ef178d260a6a077501f4efba83be8783838ce21d083eb665174d3310d0",
+        },
         .rtmidi = .{
             .url = "https://github.com/thestk/rtmidi/archive/refs/tags/6.0.0.tar.gz",
             .hash = "122098d759a37725c9913a08f54112671f9f00a458a5c8102e2f5cdd9f9dac98ca07",

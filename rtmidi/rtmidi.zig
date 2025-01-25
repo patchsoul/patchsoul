@@ -68,7 +68,7 @@ pub const RtMidi = struct {
         running.value = .ready;
         running.release();
 
-        const log_file = std.fs.cwd().createFile("rtmidi.out", .{}) catch null;
+        const log_file = std.fs.cwd().createFile("midi.out", .{}) catch null;
         writeLogFile(log_file, "midi init...\n", .{});
         const rt = c.rtmidi_in_create_default();
         if (rt.*.ptr == null) {
