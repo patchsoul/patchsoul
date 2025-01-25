@@ -53,3 +53,31 @@ pub const Duration = union(Units) {
         };
     }
 };
+
+test "duration conversions work" {
+    try std.testing.expectEqual(1_234_000_000, (Duration{ .ms = 1_234 }).to_ns());
+    try std.testing.expectEqual(5_678_000, (Duration{ .us = 5_678 }).to_ns());
+    try std.testing.expectEqual(999, (Duration{ .ns = 999 }).to_ns());
+}
+
+test "now works with sleep in ms" {
+    const start_us = now(.us);
+    sleep(.{ .ms = 5 });
+    const delta_us = now(.us) - start_us;
+    try std.testing.expect(delta_us > 4_500 and delta_us < 5_500);
+}
+
+test "now works with sleep in us" {
+    const start_us = now(.us);
+    sleep(.{ .us = 600 });
+    const delta_us = now(.us) - start_us;
+    try std.testing.expect(delta_us > 500 and delta_us < 700);
+}
+
+test "now works with sleep in ns" {
+    const start_ns = now(.ns);
+    // We don't have huge resolution for sleep with ns, so make it big.
+    sleep(.{ .ns = 200_000 });
+    const delta_ns = now(.ns) - start_ns;
+    try std.testing.expect(delta_ns > 100_000 and delta_ns < 300_000);
+}
