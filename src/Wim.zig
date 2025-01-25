@@ -57,7 +57,7 @@ pub fn run(self: *Wim) !void {
     try self.vx.queryTerminal(self.ttyWriter(), 1 * std.time.ns_per_s);
     try self.vx.setMouseMode(self.ttyWriter(), true);
     if (self.rtmidi) |*rtmidi| {
-        rtmidi.start(10, &loop, midiCallback);
+        rtmidi.start(.{ .ms = 1 }, &loop, midiCallback);
     }
 
     while (!self.should_quit) {

@@ -1,5 +1,6 @@
 const lib = @import("lib");
 
+const time = lib.time;
 const Shtick = lib.Shtick;
 const common = lib.common;
 
@@ -105,18 +106,17 @@ pub const RtMidi = struct {
     }
 
     // TODO: add a `context: anytype` that we pass in to the function.
-    pub fn start(self: *Self, sleep_time_ns: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
+    pub fn start(self: *Self, sleep_duration: time.Duration, data: anytype, callback: Callback(@TypeOf(data))) void {
         self.writeErr("midi starting...\n", .{});
         std.debug.assert(self.rt.*.ptr != null);
 
         make(.running);
-        _ = std.Thread.spawn(.{}, midiLoop, .{ self, sleep_time_ns, data, callback }) catch {
+        _ = std.Thread.spawn(.{}, midiLoop, .{ self, sleep_duration, data, callback }) catch {
             @panic("couldn't spawn RtMidi thread");
         };
     }
 
-    // TODO: pass a sleep_duration not a sleep_time_ns
-    fn midiLoop(self: *Self, sleep_time_ns: u16, data: anytype, callback: Callback(@TypeOf(data))) void {
+    fn midiLoop(self: *Self, sleep_duration: time.Duration, data: anytype, callback: Callback(@TypeOf(data))) void {
         while (true) {
             running.acquire();
             if (running.value != .running) {
@@ -127,7 +127,7 @@ pub const RtMidi = struct {
             self.notify(data, callback);
             running.release();
 
-            lib.time.sleep(.{ .ns = sleep_time_ns });
+            time.sleep(sleep_duration);
         }
         self.writeErr("midi loop stopped.\n", .{});
     }
