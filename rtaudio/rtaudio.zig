@@ -5,6 +5,8 @@ const Shtick = lib.Shtick;
 const common = lib.common;
 
 const std = @import("std");
+const math = std.math;
+
 const c = @cImport({
     @cInclude("rtaudio_c.h");
 });
@@ -33,24 +35,26 @@ fn make(run_value: Running) void {
 }
 
 pub fn rtAudioCallback(
-    out: *anyopaque,
-    in: *anyopaque,
-    frame_count: u32,
+    out: ?*anyopaque,
+    in: ?*anyopaque,
+    frame_count: c_uint,
     stream_time: f64,
     status: c.rtaudio_stream_status_t,
-    user_data: *anyopaque,
-) void {
-    const out_sample: *Sample = @ptrCast(out);
+    user_data: ?*anyopaque,
+) callconv(.C) c_int {
+    const out_sample: *[math.maxInt(u31)]Sample = @alignCast(@ptrCast(out));
     const samples = out_sample[0..frame_count];
     _ = in;
     _ = stream_time;
     _ = status;
-    const rtaudio: *RtAudio = @ptrCast(user_data);
+    const rtaudio: *RtAudio = @alignCast(@ptrCast(user_data));
     if (rtaudio.callable) |callable| {
         callable.callback(callable.data, samples);
     } else {
         RtAudio.defaultCallback(rtaudio, samples);
     }
+    // 0 for OK, 1 for stop & drain, 2 for abort immediately.
+    return 0;
 }
 
 var log_file: ?std.fs.File = null;
@@ -61,7 +65,7 @@ inline fn writeLog(comptime format: []const u8, data: anytype) void {
     }
 }
 
-pub fn rtErrCallback(err: c.rtaudio_err_t, message: [:0]u8) void {
+pub fn rtErrCallback(err: c.rtaudio_error_t, message: [*c]const u8) callconv(.C) void {
     writeLog("ERROR {d}: {s}\n", .{ err, message });
 }
 
@@ -109,15 +113,16 @@ pub const RtAudio = struct {
     pub fn start(self: *Self) Error!void {
         running.acquire();
         defer running.release();
-        std.debug.assert(running.value == .not_running);
+        std.debug.assert(running.value == .ready);
         running.value = .running;
         var output = c.rtaudio_stream_parameters_t{
             .device_id = c.rtaudio_get_default_output_device(self.rt),
             .num_channels = 2, // stereo
             .first_channel = 0,
         };
-        var frame_count = 256;
-        if (c.rtaudi_open_stream(
+        var frame_count: c_uint = 256;
+        writeLog("requesting {d} frames...\n", .{frame_count});
+        if (c.rtaudio_open_stream(
             self.rt,
             &output,
             null,
@@ -131,6 +136,7 @@ pub const RtAudio = struct {
         ) != 0) {
             return Error.could_not_start;
         }
+        writeLog("got {d} frames.\n", .{frame_count});
     }
 
     pub fn stop(self: *Self) void {
@@ -138,8 +144,8 @@ pub const RtAudio = struct {
     }
 
     fn stopWith(self: *Self, run_value: Running) void {
-        _ = self;
         writeLog("stopping audio...\n", .{});
+        c.rtaudio_close_stream(self.rt);
         make(run_value);
         writeLog("audio stopped.\n", .{});
     }

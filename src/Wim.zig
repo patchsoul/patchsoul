@@ -69,6 +69,10 @@ pub fn run(self: *Self) !void {
     if (self.rtmidi) |*rtmidi| {
         rtmidi.start(.{ .ms = 1 }, &loop, midiCallback);
     }
+    self.rtaudio.start() catch {
+        @panic("need audio for this utility, can't start RtAudio");
+    };
+    defer self.rtaudio.stop();
 
     while (!self.should_quit) {
         loop.pollEvent();
