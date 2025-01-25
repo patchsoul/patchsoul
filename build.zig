@@ -16,8 +16,7 @@ pub fn build(b: *std.Build) void {
     var rtmidi = addRtMidiModule(b, target, optimize);
     rtmidi.addImport("lib", lib);
 
-    var sdl = addSdlModule(b, target, optimize);
-    sdl.addImport("lib", lib);
+    const sdl = addSdlModule(b, target, optimize);
 
     const vaxis = addVaxisDependency(b, target, optimize);
 
@@ -41,7 +40,6 @@ pub fn build(b: *std.Build) void {
     });
     exe_unit_tests.root_module.addImport("lib", lib);
     exe_unit_tests.root_module.addImport("rtmidi", rtmidi);
-    exe_unit_tests.root_module.addImport("sdl", sdl);
     exe_unit_tests.root_module.addImport("vaxis", vaxis);
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
