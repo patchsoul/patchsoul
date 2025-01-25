@@ -13,43 +13,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const rtmidi_dep_c = b.dependency("rtmidi", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const rtmidi_zig = b.addStaticLibrary(.{
-        .name = "rtmidi-zig",
-        .root_source_file = b.path("rtmidi/rtmidi.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    // TODO: add other operating system configurations
-    if (target.result.os.tag == .linux) {
-        // TODO: add option for __UNIX_JACK__
-        rtmidi_zig.defineCMacro("__LINUX_ALSA__", "1");
-        rtmidi_zig.linkSystemLibrary("alsa");
-    }
-    rtmidi_zig.linkLibC();
-    rtmidi_zig.linkLibCpp();
-    rtmidi_zig.addCSourceFiles(.{
-        .root = rtmidi_dep_c.path(""),
-        .files = &.{ "rtmidi_c.cpp", "RtMidi.cpp" },
-    });
-    rtmidi_zig.installHeadersDirectory(rtmidi_dep_c.path(""), "", .{
-        .include_extensions = &.{ "rtmidi_c.h", "RtMidi.h" },
-    });
-    b.installArtifact(rtmidi_zig);
-    const rtmidi = b.addModule("rtmidi", .{
-        .root_source_file = b.path("rtmidi/rtmidi.zig"),
-    });
-    rtmidi.addIncludePath(rtmidi_dep_c.path(""));
-    rtmidi.linkLibrary(rtmidi_zig);
+    var rtmidi = addRtMidiModule(b, target, optimize);
     rtmidi.addImport("lib", lib);
 
-    const vaxis_dep = b.dependency("vaxis", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    const vaxis = addVaxisDependency(b, target, optimize);
 
     const exe = b.addExecutable(.{
         .name = "patchsoul",
@@ -57,9 +24,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
-    exe.root_module.addImport("rtmidi", rtmidi);
     exe.root_module.addImport("lib", lib);
+    exe.root_module.addImport("rtmidi", rtmidi);
+    exe.root_module.addImport("vaxis", vaxis);
 
     b.installArtifact(exe);
 
@@ -68,9 +35,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe_unit_tests.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
-    exe_unit_tests.root_module.addImport("rtmidi", rtmidi);
     exe_unit_tests.root_module.addImport("lib", lib);
+    exe_unit_tests.root_module.addImport("rtmidi", rtmidi);
+    exe_unit_tests.root_module.addImport("vaxis", vaxis);
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
     // This *creates* a Run step in the build graph, to be executed when another
@@ -109,4 +76,47 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
     test_step.dependOn(&run_lib_unit_tests.step);
+}
+
+fn addRtMidiModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const rtmidi_dep_c = b.dependency("rtmidi", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const rtmidi_zig = b.addStaticLibrary(.{
+        .name = "rtmidi-zig",
+        .root_source_file = b.path("rtmidi/rtmidi.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    // TODO: add other operating system configurations
+    if (target.result.os.tag == .linux) {
+        // TODO: add option for __UNIX_JACK__
+        rtmidi_zig.defineCMacro("__LINUX_ALSA__", "1");
+        rtmidi_zig.linkSystemLibrary("alsa");
+    }
+    rtmidi_zig.linkLibC();
+    rtmidi_zig.linkLibCpp();
+    rtmidi_zig.addCSourceFiles(.{
+        .root = rtmidi_dep_c.path(""),
+        .files = &.{ "rtmidi_c.cpp", "RtMidi.cpp" },
+    });
+    rtmidi_zig.installHeadersDirectory(rtmidi_dep_c.path(""), "", .{
+        .include_extensions = &.{ "rtmidi_c.h", "RtMidi.h" },
+    });
+    b.installArtifact(rtmidi_zig);
+    const rtmidi = b.addModule("rtmidi", .{
+        .root_source_file = b.path("rtmidi/rtmidi.zig"),
+    });
+    rtmidi.addIncludePath(rtmidi_dep_c.path(""));
+    rtmidi.linkLibrary(rtmidi_zig);
+    return rtmidi;
+}
+
+fn addVaxisDependency(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const vaxis_dep = b.dependency("vaxis", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    return vaxis_dep.module("vaxis");
 }
