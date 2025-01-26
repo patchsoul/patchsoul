@@ -108,7 +108,7 @@ pub fn run(self: *Self) !void {
     while (!self.should_quit) {
         loop.pollEvent();
         while (loop.tryEvent()) |event| {
-            try self.update(event);
+            try self.update(&synthesizer, event);
         }
 
         self.draw();
@@ -119,7 +119,7 @@ pub fn run(self: *Self) !void {
     }
 }
 
-pub fn update(self: *Self, event: Event) !void {
+pub fn update(self: *Self, synthesizer: *zsynth.Synthesizer, event: Event) !void {
     switch (event) {
         .key_press => |key| {
             if (key.matches('c', .{ .ctrl = true }))
@@ -144,10 +144,15 @@ pub fn update(self: *Self, event: Event) !void {
                 }
             },
             .note_on => |note_on| {
-                self.writeLog("note on {d}\n", .{note_on.pitch});
+                const normalized_velocity: u8 = 64 + note_on.velocity / 2;
+                synthesizer.noteOn(0, note_on.pitch, normalized_velocity);
+                // TODO: whether recording or not, put into a "master midi file" that you can open read-only
+                // and copy from.  master midi file "sleeps" if there's no input for a while.
             },
             .note_off => |note_off| {
-                self.writeLog("note off {d}\n", .{note_off.pitch});
+                // we ignore note_off velocity in ziggysynth.
+                synthesizer.noteOff(0, note_off.pitch);
+                // TODO: add to master midi file
             },
         },
         .winsize => |ws| {
