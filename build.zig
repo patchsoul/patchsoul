@@ -20,6 +20,7 @@ pub fn build(b: *std.Build) void {
     rtmidi.addImport("lib", lib);
 
     const vaxis = addVaxisDependency(b, target, optimize);
+    const ziggysynth = addZiggySynthDependency(b, target, optimize);
 
     const exe = b.addExecutable(.{
         .name = "patchsoul",
@@ -31,6 +32,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("rtaudio", rtaudio);
     exe.root_module.addImport("rtmidi", rtmidi);
     exe.root_module.addImport("vaxis", vaxis);
+    exe.root_module.addImport("ziggysynth", ziggysynth);
 
     b.installArtifact(exe);
 
@@ -43,6 +45,7 @@ pub fn build(b: *std.Build) void {
     exe_unit_tests.root_module.addImport("rtaudio", rtaudio);
     exe_unit_tests.root_module.addImport("rtmidi", rtmidi);
     exe_unit_tests.root_module.addImport("vaxis", vaxis);
+    exe_unit_tests.root_module.addImport("ziggysynth", ziggysynth);
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
     // This *creates* a Run step in the build graph, to be executed when another
@@ -159,4 +162,17 @@ fn addVaxisDependency(b: *std.Build, target: std.Build.ResolvedTarget, optimize:
         .optimize = optimize,
     });
     return vaxis_dep.module("vaxis");
+}
+
+fn addZiggySynthDependency(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const ziggysynth_dep = b.dependency("ziggysynth", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const ziggysynth = b.addModule("ziggysynth", .{
+        .root_source_file = ziggysynth_dep.path("src/ziggysynth.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    return ziggysynth;
 }

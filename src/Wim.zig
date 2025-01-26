@@ -3,6 +3,7 @@ const lib = @import("lib");
 const RtAudio = @import("rtaudio").RtAudio;
 const RtMidi = @import("rtmidi").RtMidi;
 const vaxis = @import("vaxis");
+const zsynth = @import("ziggysynth");
 
 const std = @import("std");
 const math = std.math;
@@ -26,9 +27,13 @@ last_port_count: usize = 0,
 port_update_message: lib.Shtick,
 needs_full_redraw: bool = true,
 log_file: ?std.fs.File,
-phase: f32 = 0.0,
+sound_font: zsynth.SoundFont,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
+    // TODO: make this a command-line option, defaulting to SoundFont.sf2 if nothing else is passed in.
+    var sf2 = std.fs.cwd().openFile("SoundFont.sf2", .{}) catch {
+        @panic("Copy a sound font like TimGM6mb.sf2 or FluidR3_GM.sf2 into the patchsoul directory as SoundFont.sf2");
+    };
     return .{
         .allocator = allocator,
         .tty = try vaxis.Tty.init(),
@@ -39,10 +44,12 @@ pub fn init(allocator: std.mem.Allocator) !Self {
             @panic("should have enough capacity");
         },
         .log_file = std.fs.cwd().createFile("wim.out", .{}) catch null,
+        .sound_font = try zsynth.SoundFont.init(lib.common.allocator, sf2.reader()),
     };
 }
 
 pub fn deinit(self: *Self) void {
+    self.sound_font.deinit();
     self.vx.deinit(self.allocator, self.ttyWriter());
     self.tty.deinit();
     if (self.rtmidi) |*rtmidi| {
@@ -59,15 +66,17 @@ fn midiCallback(loop: *vaxis.Loop(Event), event: RtMidi.Event) void {
     loop.postEvent(.{ .midi = event });
 }
 
-fn sinAndCos(data: *anyopaque, samples: []Sample) void {
-    const phase: *f32 = @alignCast(@ptrCast(data));
+fn sample_ziggy(data: *anyopaque, samples: []Sample) void {
+    const synthesizer: *zsynth.Synthesizer = @alignCast(@ptrCast(data));
+    var buffer_left: [512]f32 = undefined;
+    var buffer_right: [512]f32 = undefined;
+    std.debug.assert(samples.len <= 512);
+    synthesizer.render(buffer_left[0..samples.len], buffer_right[0..samples.len]);
+    var i: usize = 0;
     for (samples) |*sample| {
-        sample.left = math.sin(phase.*);
-        sample.right = math.cos(phase.*);
-        phase.* += math.tau * 440.0 / @as(f32, RtAudio.frequency_hz);
-        if (phase.* >= math.pi) {
-            phase.* -= math.tau;
-        }
+        sample.left = buffer_left[i];
+        sample.right = buffer_right[i];
+        i += 1;
     }
 }
 
@@ -84,9 +93,12 @@ pub fn run(self: *Self) !void {
     if (self.rtmidi) |*rtmidi| {
         rtmidi.start(.{ .ms = 1 }, &loop, midiCallback);
     }
+    var settings = zsynth.SynthesizerSettings.init(RtAudio.frequency_hz);
+    var synthesizer = try zsynth.Synthesizer.init(lib.common.allocator, &self.sound_font, &settings);
+    defer synthesizer.deinit();
     self.rtaudio.callable = .{
-        .data = &self.phase,
-        .callback = sinAndCos,
+        .data = &synthesizer,
+        .callback = sample_ziggy,
     };
     self.rtaudio.start() catch {
         @panic("can't start RtAudio, but this is required");

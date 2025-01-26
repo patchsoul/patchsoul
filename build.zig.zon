@@ -15,6 +15,10 @@
             .url = "https://github.com/rockorager/libvaxis/archive/refs/tags/v0.5.1.tar.gz",
             .hash = "1220de23a3240e503397ea579de4fd85db422f537e10036ef74717c50164475813ce",
         },
+        .ziggysynth = .{
+            .url = "https://github.com/sinshu/ziggysynth/archive/c5d3136f879c9fddb218991edcf7e78fed58305f.tar.gz",
+            .hash = "12205e944505056a2d87b49d0366238db31593943638041f63a37aca3ef55cddbaff",
+        },
     },
 
     .paths = .{
