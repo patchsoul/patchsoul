@@ -76,6 +76,8 @@ pub const RtAudio = struct {
     pub const Sample = AudioSample;
     pub const Callback = AudioCallback;
     pub const Callable = AudioCallable;
+    pub const frequency_hz = 44_100;
+
     rt: c.rtaudio_t,
     callable: ?Callable = null,
 
@@ -132,7 +134,7 @@ pub const RtAudio = struct {
             &output,
             null,
             c.RTAUDIO_FORMAT_FLOAT32,
-            44100,
+            frequency_hz,
             &frame_count,
             rtAudioCallback,
             self,

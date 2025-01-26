@@ -64,7 +64,7 @@ fn sinAndCos(data: *anyopaque, samples: []Sample) void {
     for (samples) |*sample| {
         sample.left = math.sin(phase.*);
         sample.right = math.cos(phase.*);
-        phase.* += math.tau * 440.0 / 44_100.0;
+        phase.* += math.tau * 440.0 / @as(f32, RtAudio.frequency_hz);
         if (phase.* >= math.pi) {
             phase.* -= math.tau;
         }
