@@ -5,3 +5,7 @@ pub const File = struct {
 
     const Self = @This();
 };
+
+pub const BinaryReader = struct {
+    // follow ZiggySynth a bit.
+};
