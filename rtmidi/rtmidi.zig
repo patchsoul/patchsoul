@@ -1,8 +1,9 @@
 const lib = @import("lib");
 
+const common = lib.common;
+const midi = lib.midi;
 const time = lib.time;
 const Shtick = lib.Shtick;
-const common = lib.common;
 
 const OwnedPorts = lib.owned_list.OwnedList(Port);
 
@@ -11,27 +12,14 @@ const c = @cImport({
     @cInclude("rtmidi_c.h");
 });
 
-pub const MidiEvent = union(enum) {
-    /// Ports were connected or disconnected.
-    ports_updated,
-    note_on: Note,
-    note_off: Note,
-
-    pub const Note = MidiNote;
-};
-
-pub const MidiNote = struct {
-    port: u8,
-    pitch: u8,
-    // How fast to hit (or release) a note.
-    velocity: u8,
-};
-
 const Running = enum(u8) {
     not_running,
     ready,
     running,
 };
+
+pub const MidiEvent = midi.Event;
+pub const MidiNote = midi.Note;
 
 pub fn MidiEventCallback(comptime D: type) type {
     return *const fn (data: D, e: MidiEvent) void;
