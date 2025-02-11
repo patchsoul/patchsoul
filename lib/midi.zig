@@ -1,3 +1,4 @@
+const lib_file = @import("file.zig");
 const owned_list = @import("owned_list.zig");
 const Shtick = @import("shtick.zig").Shtick;
 
@@ -30,7 +31,17 @@ pub const Note = struct {
 };
 
 pub const File = struct {
+    pub const Error = error{
+        invalid_midi_file,
+    };
+
+    pub const Header = struct {
+        track_count: i16 = 0,
+        resolution: i16 = 0,
+    };
+
     path: Shtick,
+    header: Header,
     tracks: OwnedTracks,
 
     pub fn deinit(self: *Self) void {
@@ -41,19 +52,32 @@ pub const File = struct {
     /// The midi File will take ownership of the path Shtick without making a copy,
     /// so don't free it at the callsite.
     pub fn init(path: Shtick) Self {
-        const tracks = if (std.fs.cwd().openFile(path.slice(), .{})) |file| blk: {
+        if (std.fs.cwd().openFile(path.slice(), .{})) |file| {
             defer file.close();
-            break :blk readTracks(file.reader()) catch OwnedTracks.init();
-        } else OwnedTracks.init();
-        return Self { .path = path, .tracks = tracks };
+            errdefer file.close();
+            const reader = file.reader();
+
+            if (readHeader(reader)) |header| {
+                const tracks = readTracks(reader) catch OwnedTracks.init();
+                return Self{ .path = path, .header = header, .tracks = tracks };
+            } else |_| {}
+        } else |_| {}
+        return Self{ .path = path, .header = .{}, .tracks = OwnedTracks.init() };
     }
-    
-    /// The midi File will take ownership of the path Shtick without making a copy,
-    /// so don't free it at the callsite.
+
+    fn readHeader(reader: anytype) !Header {
+        const file_type = try lib_file.Reader.readBytes(4, reader);
+        if (!std.mem.eql(u8, &file_type, "MThd")) {
+            return Error.invalid_midi_file;
+        }
+        return Header{ .track_count = 0, .resolution = 0 };
+    }
+
     fn readTracks(reader: anytype) !OwnedTracks {
+        const tracks = OwnedTracks.init();
         // TODO
         _ = reader;
-        return OwnedTracks.init();
+        return tracks;
     }
 
     const Self = @This();

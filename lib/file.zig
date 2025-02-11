@@ -6,6 +6,10 @@ pub const File = struct {
     const Self = @This();
 };
 
-pub const BinaryReader = struct {
-    // follow ZiggySynth a bit.
+pub const Reader = struct {
+    pub fn readBytes(N: comptime_int, reader: anytype) ![N]u8 {
+        var data: [N]u8 = undefined;
+        _ = try reader.readNoEof(&data);
+        return data;
+    }
 };
