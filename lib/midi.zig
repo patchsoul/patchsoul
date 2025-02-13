@@ -1,4 +1,4 @@
-const lib_file = @import("file.zig");
+const FileHelper = @import("file.zig").Helper;
 const owned_list = @import("owned_list.zig");
 const Shtick = @import("shtick.zig").Shtick;
 
@@ -31,6 +31,8 @@ pub const Note = struct {
 };
 
 pub const File = struct {
+    pub const max_track_count = 32;
+
     pub const Error = error{
         invalid_midi_file,
     };
@@ -68,11 +70,14 @@ pub const File = struct {
         const new_tracks = try readTracks(reader);
         self.header = new_header;
         self.tracks = new_tracks;
+        if (self.tracks.count() != self.header.track_count) {
+            // TODO: print an error somewhere
+        }
     }
 
     /// Writes the file to disk.  Returns an error if unsuccessful.
     pub fn write(self: *const Self) !void {
-        var file = try std.fs.cwd().openFile(self.path.slice(), .{.mode = .write_only});
+        var file = try std.fs.cwd().openFile(self.path.slice(), .{ .mode = .write_only });
         defer file.close();
         errdefer file.close();
         const writer = file.writer();
@@ -82,11 +87,24 @@ pub const File = struct {
     }
 
     fn readHeader(reader: anytype) !Header {
-        const file_type = try lib_file.Reader.readBytes(4, reader);
+        const file_type = try FileHelper.readBytes(4, reader);
         if (!std.mem.eql(u8, &file_type, "MThd")) {
             return Error.invalid_midi_file;
         }
-        return Header{ .track_count = 0, .resolution = 0 };
+        const size = try FileHelper.readBigEndian(i32, reader);
+        if (size != 6) {
+            return Error.invalid_midi_file;
+        }
+        const format = try FileHelper.readBigEndian(i16, reader);
+        if (!(format == 0 or format == 1)) {
+            return Error.invalid_midi_file;
+        }
+        const track_count = try FileHelper.readBigEndian(i16, reader);
+        const resolution = try FileHelper.readBigEndian(i16, reader);
+        if (track_count > max_track_count) {
+            return Error.invalid_midi_file;
+        }
+        return Header{ .track_count = track_count, .resolution = resolution };
     }
 
     fn writeHeader(self: *const Self, writer: anytype) !void {
@@ -98,6 +116,9 @@ pub const File = struct {
         const tracks = OwnedTracks.init();
         // TODO
         _ = reader;
+        if (tracks.count() > max_track_count) {
+            return Error.invalid_midi_file;
+        }
         return tracks;
     }
 

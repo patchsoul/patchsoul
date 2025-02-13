@@ -13,7 +13,8 @@ pub fn main() !void {
     // Try some junk
     var midi_file = lib.midi.File.init(Shtick.init("flourish.mid") catch @panic("oh no"));
     defer midi_file.deinit();
-    std.debug.assert(midi_file.header.track_count == 0);
+    std.debug.assert(midi_file.header.resolution == 384);
+    std.debug.assert(midi_file.header.track_count == 16);
 
     // Initialize our application
     var wim = try Wim.init(lib.common.allocator);

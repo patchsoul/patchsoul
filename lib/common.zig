@@ -15,6 +15,10 @@ pub fn cleanUp() void {
     stderr_data.reset();
 }
 
+pub fn isLittleEndian() bool {
+    return builtin.target.cpu.arch.endian() == .little;
+}
+
 pub const allocator: std.mem.Allocator = if (in_test)
     std.testing.allocator
 else
