@@ -37,7 +37,7 @@ pub const File = struct {
 
     pub const Header = struct {
         track_count: i16 = 0,
-        resolution: i16 = 0,
+        resolution: i16 = 360,
     };
 
     path: Shtick,
@@ -52,17 +52,33 @@ pub const File = struct {
     /// The midi File will take ownership of the path Shtick without making a copy,
     /// so don't free it at the callsite.
     pub fn init(path: Shtick) Self {
-        if (std.fs.cwd().openFile(path.slice(), .{})) |file| {
-            defer file.close();
-            errdefer file.close();
-            const reader = file.reader();
+        var result = Self{ .path = path, .header = .{}, .tracks = OwnedTracks.init() };
+        result.read() catch {};
+        return result;
+    }
 
-            if (readHeader(reader)) |header| {
-                const tracks = readTracks(reader) catch OwnedTracks.init();
-                return Self{ .path = path, .header = header, .tracks = tracks };
-            } else |_| {}
-        } else |_| {}
-        return Self{ .path = path, .header = .{}, .tracks = OwnedTracks.init() };
+    /// Re-reads the file from disk.  Returns an error if unsuccessful.
+    pub fn read(self: *Self) !void {
+        var file = try std.fs.cwd().openFile(self.path.slice(), .{});
+        defer file.close();
+        errdefer file.close();
+        const reader = file.reader();
+
+        const new_header = try readHeader(reader);
+        const new_tracks = try readTracks(reader);
+        self.header = new_header;
+        self.tracks = new_tracks;
+    }
+
+    /// Writes the file to disk.  Returns an error if unsuccessful.
+    pub fn write(self: *const Self) !void {
+        var file = try std.fs.cwd().openFile(self.path.slice(), .{.mode = .write_only});
+        defer file.close();
+        errdefer file.close();
+        const writer = file.writer();
+
+        try self.writeHeader(writer);
+        try self.writeTracks(writer);
     }
 
     fn readHeader(reader: anytype) !Header {
@@ -73,11 +89,22 @@ pub const File = struct {
         return Header{ .track_count = 0, .resolution = 0 };
     }
 
+    fn writeHeader(self: *const Self, writer: anytype) !void {
+        try std.fmt.format(writer, "MThd", .{});
+        _ = self;
+    }
+
     fn readTracks(reader: anytype) !OwnedTracks {
         const tracks = OwnedTracks.init();
         // TODO
         _ = reader;
         return tracks;
+    }
+
+    fn writeTracks(self: *const Self, writer: anytype) !void {
+        _ = self;
+        _ = writer;
+        // TODO
     }
 
     const Self = @This();
