@@ -45,3 +45,26 @@ pub const Helper = struct {
         try writer.writeAll(&data);
     }
 };
+
+fn ByteCountReader(comptime T: type) type {
+    return struct {
+        reader: T,
+        count: usize = 0,
+
+        pub fn init(reader: T) Self {
+            return Self { .reader = reader };
+        }
+
+        pub fn readNoEof(self: *Self, buf: []u8) !void {
+            try self.reader.readNoEof(buf);
+            self.count += buf.len;
+        }
+
+        pub fn skipBytes(self: *Self, byte_count: u64, options: anytype) !void {
+            try self.reader.skipBytes(byte_count, options);
+            self.count += @intCast(byte_count);
+        }
+
+        const Self = @This();
+    }
+}

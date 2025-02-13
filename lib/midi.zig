@@ -138,6 +138,7 @@ pub const File = struct {
 
     fn readTracks(reader: anytype) !OwnedTracks {
         var tracks = OwnedTracks.init();
+        errdefer tracks.deinit();
         while (true) {
             const next_track = readTrack(reader) catch break;
             try tracks.append(next_track);
@@ -155,11 +156,13 @@ pub const File = struct {
     }
 
     fn readTrack(reader: anytype) !Track {
-        const track = Track.init();
         const chunk_type = try FileHelper.readBytes(4, reader);
         if (!std.mem.eql(u8, &chunk_type, "MTrk")) {
             return Error.invalid_midi_file;
         }
+        const track = Track.init();
+        errdefer track.deinit();
+
         return track;
     }
 
