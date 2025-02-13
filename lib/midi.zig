@@ -2,16 +2,26 @@ const FileHelper = @import("file.zig").Helper;
 const owned_list = @import("owned_list.zig");
 const Shtick = @import("shtick.zig").Shtick;
 
-const OwnedTimedEvents = owned_list.OwnedList(TimedEvent);
+const OwnedTrackEvents = owned_list.OwnedList(TrackEvent);
 const OwnedTracks = owned_list.OwnedList(Track);
 
 const std = @import("std");
 
 pub const Track = struct {
-    timed_events: OwnedTimedEvents,
+    events: OwnedTrackEvents,
+
+    pub fn init() Self {
+        return Self { .events = OwnedTrackEvents.init() };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.events.deinit();
+    }
+
+    const Self = @This();
 };
 
-pub const TimedEvent = struct {
+pub const TrackEvent = struct {
     tick: i32,
     event: Event,
 };
@@ -127,9 +137,11 @@ pub const File = struct {
     }
 
     fn readTracks(reader: anytype) !OwnedTracks {
-        const tracks = OwnedTracks.init();
-        // TODO
-        _ = reader;
+        var tracks = OwnedTracks.init();
+        while (true) {
+            const next_track = readTrack(reader) catch break;
+            try tracks.append(next_track);
+        }
         if (tracks.count() > max_track_count) {
             return Error.invalid_midi_file;
         }
@@ -137,9 +149,23 @@ pub const File = struct {
     }
 
     fn writeTracks(self: *const Self, writer: anytype) !void {
-        _ = self;
-        _ = writer;
-        // TODO
+        for (self.tracks.items()) |track| {
+            try writeTrack(writer, track);
+        }
+    }
+
+    fn readTrack(reader: anytype) !Track {
+        const track = Track.init();
+        const chunk_type = try FileHelper.readBytes(4, reader);
+        if (!std.mem.eql(u8, &chunk_type, "MTrk")) {
+            return Error.invalid_midi_file;
+        }
+        return track;
+    }
+
+    fn writeTrack(writer: anytype, track: Track) !void {
+        try writer.writeAll("MTrk");
+        _ = track;
     }
 
     const Self = @This();
