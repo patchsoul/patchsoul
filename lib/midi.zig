@@ -77,7 +77,7 @@ pub const File = struct {
 
     /// Writes the file to disk.  Returns an error if unsuccessful.
     pub fn write(self: *const Self) !void {
-        var file = try std.fs.cwd().openFile(self.path.slice(), .{ .mode = .write_only });
+        var file = try std.fs.cwd().createFile(self.path.slice(), .{});
         defer file.close();
         errdefer file.close();
         const writer = file.writer();
@@ -96,6 +96,8 @@ pub const File = struct {
             return Error.invalid_midi_file;
         }
         const format = try FileHelper.readBigEndian(i16, reader);
+        // format == 0 is single track, format == 1 is potentially multiple tracks.
+        // there is technically a format == 2, but out of scope for us.
         if (!(format == 0 or format == 1)) {
             return Error.invalid_midi_file;
         }
@@ -108,8 +110,20 @@ pub const File = struct {
     }
 
     fn writeHeader(self: *const Self, writer: anytype) !void {
+        const track_count: i16 = @intCast(self.tracks.count());
+        if (track_count > max_track_count) {
+            return Error.invalid_midi_file;
+        }
+
         try std.fmt.format(writer, "MThd", .{});
-        _ = self;
+        const size: i32 = 6;
+        try FileHelper.writeBigEndian(writer, size);
+        // format == 0 is single track, format == 1 is potentially multiple tracks.
+        const format: i16 = if (track_count == 1) 0 else 1;
+        try FileHelper.writeBigEndian(writer, format);
+
+        try FileHelper.writeBigEndian(writer, track_count);
+        try FileHelper.writeBigEndian(writer, self.header.resolution);
     }
 
     fn readTracks(reader: anytype) !OwnedTracks {

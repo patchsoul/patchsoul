@@ -11,10 +11,13 @@ pub const panic = Wim.panic_handler;
 
 pub fn main() !void {
     // Try some junk
-    var midi_file = lib.midi.File.init(Shtick.init("flourish.mid") catch @panic("oh no"));
+    var midi_file = lib.midi.File.init(Shtick.unallocated("flourish.mid"));
     defer midi_file.deinit();
     std.debug.assert(midi_file.header.resolution == 384);
     std.debug.assert(midi_file.header.track_count == 16);
+    // Don't overwrite flourish.mid!
+    midi_file.path = Shtick.unallocated("test.mid");
+    try midi_file.write();
 
     // Initialize our application
     var wim = try Wim.init(lib.common.allocator);
