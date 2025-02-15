@@ -64,21 +64,27 @@ pub const Track = struct {
         self.events.deinit();
     }
 
+    pub inline fn count(self: *const Self) usize {
+        return self.events.count();
+    }
+
     pub fn insert(self: *Self, track_event: TrackEvent) !void {
-        if (track_event.ticks >= std.math.maxInt(i32) - 1) {
+        if (track_event.ticks >= std.math.maxInt(i32)) {
             return Error.close_to_overflow;
         }
-        if (common.before(self.events.count())) |highest_index| {
-            // As a slight optimization, insert at the end of the current list
-            // of events with the same ticks as `track_event.ticks`:
-            const insertion_index = findNextIndex(track_event.ticks + 1) orelse highest_index;
-            try self.events.insert(insertion_index, track_event);
-        } else {
-            try self.events.append(track_event);
+        if (self.count() > 0) {
+            if (self.findNextIndex(track_event.ticks + 1)) |insertion_index| {
+                // As a slight optimization, insert at the end of the current list
+                // of events with the same ticks as `track_event.ticks`:
+                try self.events.insert(insertion_index, track_event);
+                return;
+            }
         }
+        try self.events.append(track_event);
     }
 
     // Returns true iff the track event got erased (i.e., was present).
+    // Erases only the first instance, try not to add multiple events that are the same.
     pub fn erase(self: *Self, track_event: TrackEvent) bool {
         // TODO
         _ = self;
@@ -143,6 +149,7 @@ pub const Track = struct {
 pub const TrackRangeType = enum {
     at_ticks,
     tick_range,
+    all,
 };
 
 pub const TickRange = struct { start: i32, end: i32 };
@@ -150,11 +157,13 @@ pub const TickRange = struct { start: i32, end: i32 };
 pub const TrackRange = union(TrackRangeType) {
     at_ticks: i32,
     tick_range: TickRange,
+    all: void,
 
     fn to_tick_range(self: Self) TickRange {
         return switch (self) {
             .at_ticks => |at_ticks| .{ .start = at_ticks, .end = at_ticks + 1 },
             .tick_range => |tick_range| tick_range,
+            .all => .{ .start = std.math.minInt(i32), .end = std.math.maxInt(i32) },
         };
     }
 
@@ -306,6 +315,31 @@ pub const File = struct {
     const Self = @This();
 };
 
+test "midi.Track insert works for degenerate case" {
+    var events = OwnedTrackEvents.init();
+    try events.append(.{ .ticks = 1234, .event = .ports_updated });
+    try events.append(.{ .ticks = 6789, .event = .ports_updated });
+    var track = Track{ .events = events };
+    defer track.deinit();
+
+    try track.insert(.{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
+
+    try track.events.expectEqualsSlice(&[_]TrackEvent{
+        .{ .ticks = 1234, .event = .ports_updated },
+        .{ .ticks = 6789, .event = .ports_updated },
+        .{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
+    });
+
+    try track.insert(.{ .ticks = 1234, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
+
+    try track.events.expectEqualsSlice(&[_]TrackEvent{
+        .{ .ticks = 1234, .event = .ports_updated },
+        .{ .ticks = 1234, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
+        .{ .ticks = 6789, .event = .ports_updated },
+        .{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
+    });
+}
+
 test "midi.Track insert works for non-degenerate case" {
     var events = OwnedTrackEvents.init();
     try events.append(.{ .ticks = 1234, .event = .ports_updated });
@@ -313,7 +347,25 @@ test "midi.Track insert works for non-degenerate case" {
     var track = Track{ .events = events };
     defer track.deinit();
 
-    //TODO
+    try track.insert(.{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
+
+    try track.events.expectEqualsSlice(&[_]TrackEvent{
+        .{ .ticks = 1234, .event = .ports_updated },
+        .{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
+        .{ .ticks = 6789, .event = .ports_updated },
+    });
+
+    // and test insertions at start and end...
+    try track.insert(.{ .ticks = 1000, .event = .{ .note_on = .{ .port = 9, .pitch = 5, .velocity = 4 } } });
+    try track.insert(.{ .ticks = 7000, .event = .{ .note_off = .{ .port = 9, .pitch = 5, .velocity = 4 } } });
+
+    try track.events.expectEqualsSlice(&[_]TrackEvent{
+        .{ .ticks = 1000, .event = .{ .note_on = .{ .port = 9, .pitch = 5, .velocity = 4 } } },
+        .{ .ticks = 1234, .event = .ports_updated },
+        .{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
+        .{ .ticks = 6789, .event = .ports_updated },
+        .{ .ticks = 7000, .event = .{ .note_off = .{ .port = 9, .pitch = 5, .velocity = 4 } } },
+    });
 }
 
 test "midi.Track binary search works for fully degenerate case" {
@@ -352,7 +404,7 @@ test "midi.Track binary search works for degenerate case" {
     try std.testing.expectEqual(null, track.findNextIndex(790));
 }
 
-test "midi.Track binary search works for non-degenerate case" {
+test "midi.Track binary search works for odd-count non-degenerate case" {
     var events = OwnedTrackEvents.init();
     try events.append(.{ .ticks = 123, .event = .ports_updated });
     try events.append(.{ .ticks = 456, .event = .ports_updated });
@@ -370,6 +422,30 @@ test "midi.Track binary search works for non-degenerate case" {
     try std.testing.expectEqual(2, track.findNextIndex(789));
 
     try std.testing.expectEqual(null, track.findNextIndex(790));
+}
+
+test "midi.Track binary search works for even-count non-degenerate case" {
+    var events = OwnedTrackEvents.init();
+    try events.append(.{ .ticks = 12, .event = .ports_updated });
+    try events.append(.{ .ticks = 34, .event = .ports_updated });
+    try events.append(.{ .ticks = 56, .event = .ports_updated });
+    try events.append(.{ .ticks = 78, .event = .ports_updated });
+    var track = Track{ .events = events };
+    defer track.deinit();
+
+    try std.testing.expectEqual(0, track.findNextIndex(11));
+    try std.testing.expectEqual(0, track.findNextIndex(12));
+
+    try std.testing.expectEqual(1, track.findNextIndex(33));
+    try std.testing.expectEqual(1, track.findNextIndex(34));
+
+    try std.testing.expectEqual(2, track.findNextIndex(55));
+    try std.testing.expectEqual(2, track.findNextIndex(56));
+
+    try std.testing.expectEqual(3, track.findNextIndex(77));
+    try std.testing.expectEqual(3, track.findNextIndex(78));
+
+    try std.testing.expectEqual(null, track.findNextIndex(79));
 }
 
 test "midi.TrackEvent works with equals" {
