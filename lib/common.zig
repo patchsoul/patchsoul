@@ -159,6 +159,39 @@ pub fn printSliceLine(writer: anytype, slice: anytype) !void {
     try writer.print("\n", .{});
 }
 
+pub fn structEqual(a: anytype, b: @TypeOf(a)) bool {
+    inline for (@typeInfo(@TypeOf(a)).Struct.fields) |field_info| {
+        const SubField = @TypeOf(@field(a, field_info.name));
+        const equal = if (std.meta.hasMethod(SubField, "equals"))
+            @field(a, field_info.name).equals(@field(b, field_info.name))
+        else
+            @field(a, field_info.name) == @field(b, field_info.name);
+        if (!equal) {
+            return false;
+        }
+    }
+    return true;
+}
+
+pub fn taggedEqual(a: anytype, b: @TypeOf(a)) bool {
+    const tag_a = std.meta.activeTag(a);
+    const tag_b = std.meta.activeTag(b);
+    if (tag_a != tag_b) return false;
+    const Union = @typeInfo(@TypeOf(a)).Union;
+    const Tag = Union.tag_type.?;
+    inline for (Union.fields) |field_info| {
+        if (@field(Tag, field_info.name) == tag_a) {
+            const SubField = @TypeOf(@field(a, field_info.name));
+            if (std.meta.hasMethod(SubField, "equals")) {
+                return @field(a, field_info.name).equals(@field(b, field_info.name));
+            } else {
+                return @field(a, field_info.name) == @field(b, field_info.name);
+            }
+        }
+    }
+    unreachable;
+}
+
 pub fn expectEqualSlices(other: anytype, self: anytype) !void {
     errdefer {
         debug_stderr.print("expected:\n", .{}) catch {};

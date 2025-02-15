@@ -13,6 +13,12 @@ const std = @import("std");
 pub const TrackEvent = struct {
     ticks: i32,
     event: Event,
+
+    pub fn equals(a: Self, b: Self) bool {
+        return common.structEqual(a, b);
+    }
+
+    const Self = @This();
 };
 
 pub const Event = union(enum) {
@@ -20,6 +26,12 @@ pub const Event = union(enum) {
     ports_updated,
     note_on: Note,
     note_off: Note,
+
+    pub fn equals(a: Self, b: Self) bool {
+        return common.taggedEqual(a, b);
+    }
+
+    const Self = @This();
 };
 
 pub const Note = struct {
@@ -27,12 +39,22 @@ pub const Note = struct {
     pitch: u8,
     // How fast to hit (or release) a note.
     velocity: u8,
+
+    pub fn equals(a: Self, b: Self) bool {
+        return common.structEqual(a, b);
+    }
+
+    const Self = @This();
 };
 
 pub const Track = struct {
     // TODO: maybe come up with some cooler data structure here
     // to support efficient insertion/deletion anywhere.
     events: OwnedTrackEvents,
+
+    pub const Error = error{
+        close_to_overflow,
+    };
 
     pub fn init() Self {
         return Self{ .events = OwnedTrackEvents.init() };
@@ -43,9 +65,17 @@ pub const Track = struct {
     }
 
     pub fn insert(self: *Self, track_event: TrackEvent) !void {
-        // TODO
-        _ = self;
-        _ = track_event;
+        if (track_event.ticks >= std.math.maxInt(i32) - 1) {
+            return Error.close_to_overflow;
+        }
+        if (common.before(self.events.count())) |highest_index| {
+            // As a slight optimization, insert at the end of the current list
+            // of events with the same ticks as `track_event.ticks`:
+            const insertion_index = findNextIndex(track_event.ticks + 1) orelse highest_index;
+            try self.events.insert(insertion_index, track_event);
+        } else {
+            try self.events.append(track_event);
+        }
     }
 
     // Returns true iff the track event got erased (i.e., was present).
@@ -276,6 +306,16 @@ pub const File = struct {
     const Self = @This();
 };
 
+test "midi.Track insert works for non-degenerate case" {
+    var events = OwnedTrackEvents.init();
+    try events.append(.{ .ticks = 1234, .event = .ports_updated });
+    try events.append(.{ .ticks = 6789, .event = .ports_updated });
+    var track = Track{ .events = events };
+    defer track.deinit();
+
+    //TODO
+}
+
 test "midi.Track binary search works for fully degenerate case" {
     var events = OwnedTrackEvents.init();
     try events.append(.{ .ticks = 123, .event = .ports_updated });
@@ -330,4 +370,64 @@ test "midi.Track binary search works for non-degenerate case" {
     try std.testing.expectEqual(2, track.findNextIndex(789));
 
     try std.testing.expectEqual(null, track.findNextIndex(790));
+}
+
+test "midi.TrackEvent works with equals" {
+    try std.testing.expectEqual(
+        true,
+        (TrackEvent{ .ticks = 123, .event = .ports_updated }).equals(
+            TrackEvent{ .ticks = 123, .event = .ports_updated },
+        ),
+    );
+    // ticks are different
+    try std.testing.expectEqual(
+        false,
+        (TrackEvent{ .ticks = 123, .event = .ports_updated }).equals(
+            TrackEvent{ .ticks = 456, .event = .ports_updated },
+        ),
+    );
+    // events are different (note_on vs. note_off)
+    try std.testing.expectEqual(
+        false,
+        (TrackEvent{ .ticks = 123, .event = .{ .note_on = Note{ .port = 0, .pitch = 1, .velocity = 2 } } }).equals(
+            TrackEvent{ .ticks = 123, .event = .{ .note_off = Note{ .port = 0, .pitch = 1, .velocity = 2 } } },
+        ),
+    );
+    // events are different (note_on specifics)
+    try std.testing.expectEqual(
+        false,
+        (TrackEvent{ .ticks = 123, .event = .{ .note_on = Note{ .port = 0, .pitch = 1, .velocity = 3 } } }).equals(
+            TrackEvent{ .ticks = 123, .event = .{ .note_on = Note{ .port = 0, .pitch = 1, .velocity = 2 } } },
+        ),
+    );
+}
+
+test "midi.Note works with equals" {
+    try std.testing.expectEqual(
+        true,
+        (Note{ .port = 1, .pitch = 2, .velocity = 3 }).equals(
+            Note{ .port = 1, .pitch = 2, .velocity = 3 },
+        ),
+    );
+    // first field off
+    try std.testing.expectEqual(
+        false,
+        (Note{ .port = 1, .pitch = 2, .velocity = 3 }).equals(
+            Note{ .port = 0, .pitch = 2, .velocity = 3 },
+        ),
+    );
+    // middle field off
+    try std.testing.expectEqual(
+        false,
+        (Note{ .port = 1, .pitch = 2, .velocity = 3 }).equals(
+            Note{ .port = 1, .pitch = 3, .velocity = 3 },
+        ),
+    );
+    // last field off
+    try std.testing.expectEqual(
+        false,
+        (Note{ .port = 1, .pitch = 2, .velocity = 3 }).equals(
+            Note{ .port = 1, .pitch = 2, .velocity = 4 },
+        ),
+    );
 }
