@@ -68,6 +68,7 @@ pub const Track = struct {
         return self.events.count();
     }
 
+    // try not to add multiple events that are the same.
     pub fn insert(self: *Self, track_event: TrackEvent) !void {
         if (track_event.ticks >= std.math.maxInt(i32)) {
             return Error.close_to_overflow;
@@ -84,11 +85,18 @@ pub const Track = struct {
     }
 
     // Returns true iff the track event got erased (i.e., was present).
-    // Erases only the first instance, try not to add multiple events that are the same.
+    // Erases only the first instance.
     pub fn erase(self: *Self, track_event: TrackEvent) bool {
-        // TODO
-        _ = self;
-        _ = track_event;
+        var index = self.findNextIndex(track_event.ticks) orelse return false;
+        while (index < self.count()) {
+            const index_event = self.events.inBounds(index);
+            if (index_event.ticks != track_event.ticks) return false;
+            if (index_event.event.equals(track_event.event)) {
+                _ = self.events.remove(index);
+                return true;
+            }
+            index += 1;
+        }
         return false;
     }
 
@@ -146,15 +154,9 @@ pub const Track = struct {
     const Self = @This();
 };
 
-pub const TrackRangeType = enum {
-    at_ticks,
-    tick_range,
-    all,
-};
-
 pub const TickRange = struct { start: i32, end: i32 };
 
-pub const TrackRange = union(TrackRangeType) {
+pub const TrackRange = union(enum) {
     at_ticks: i32,
     tick_range: TickRange,
     all: void,
@@ -315,10 +317,60 @@ pub const File = struct {
     const Self = @This();
 };
 
+test "midi.Track erase works for degenerate case" {
+    var events = OwnedTrackEvents.init();
+    try events.append(.{ .ticks = 1234, .event = .ports_updated });
+    try events.append(.{ .ticks = 6789, .event = .ports_updated });
+    try events.append(.{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
+    var track = Track{ .events = events };
+    defer track.deinit();
+
+    try std.testing.expectEqual(
+        true,
+        track.erase(.{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } }),
+    );
+
+    try track.events.expectEqualsSlice(&[_]TrackEvent{
+        .{ .ticks = 1234, .event = .ports_updated },
+        .{ .ticks = 6789, .event = .ports_updated },
+    });
+}
+
+test "midi.Track erase works for non-degenerate case" {
+    var events = OwnedTrackEvents.init();
+    try events.append(.{ .ticks = 123, .event = .ports_updated });
+    try events.append(.{ .ticks = 456, .event = .ports_updated });
+    try events.append(.{ .ticks = 789, .event = .ports_updated });
+    var track = Track{ .events = events };
+    defer track.deinit();
+
+    try std.testing.expectEqual(
+        false,
+        track.erase(.{ .ticks = 789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } }),
+    );
+
+    try track.events.expectEqualsSlice(&[_]TrackEvent{
+        .{ .ticks = 123, .event = .ports_updated },
+        .{ .ticks = 456, .event = .ports_updated },
+        .{ .ticks = 789, .event = .ports_updated },
+    });
+
+    try std.testing.expectEqual(
+        true,
+        track.erase(.{ .ticks = 123, .event = .ports_updated }),
+    );
+
+    try track.events.expectEqualsSlice(&[_]TrackEvent{
+        .{ .ticks = 456, .event = .ports_updated },
+        .{ .ticks = 789, .event = .ports_updated },
+    });
+}
+
 test "midi.Track insert works for degenerate case" {
     var events = OwnedTrackEvents.init();
     try events.append(.{ .ticks = 1234, .event = .ports_updated });
     try events.append(.{ .ticks = 6789, .event = .ports_updated });
+    try events.append(.{ .ticks = 6789, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
     var track = Track{ .events = events };
     defer track.deinit();
 
@@ -327,6 +379,7 @@ test "midi.Track insert works for degenerate case" {
     try track.events.expectEqualsSlice(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 6789, .event = .ports_updated },
+        .{ .ticks = 6789, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
         .{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
     });
 
@@ -336,6 +389,7 @@ test "midi.Track insert works for degenerate case" {
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 1234, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
         .{ .ticks = 6789, .event = .ports_updated },
+        .{ .ticks = 6789, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
         .{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
     });
 }
