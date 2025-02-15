@@ -51,22 +51,22 @@ pub const Track = struct {
     // TODO: maybe come up with some cooler data structure here
     // to support efficient insertion/deletion anywhere.
     // TODO: come up with a `History` class that clones this after every user edit (not individual edit).
-    events: OwnedTrackEvents,
+    track_events: OwnedTrackEvents,
 
     pub const Error = error{
         close_to_overflow,
     };
 
     pub fn init() Self {
-        return Self{ .events = OwnedTrackEvents.init() };
+        return Self{ .track_events = OwnedTrackEvents.init() };
     }
 
     pub fn deinit(self: *Self) void {
-        self.events.deinit();
+        self.track_events.deinit();
     }
 
     pub inline fn count(self: *const Self) usize {
-        return self.events.count();
+        return self.track_events.count();
     }
 
     // try not to add multiple events that are the same.
@@ -78,11 +78,11 @@ pub const Track = struct {
             if (self.findNextIndex(track_event.ticks + 1)) |insertion_index| {
                 // As a slight optimization, insert at the end of the current list
                 // of events with the same ticks as `track_event.ticks`:
-                try self.events.insert(insertion_index, track_event);
+                try self.track_events.insert(insertion_index, track_event);
                 return;
             }
         }
-        try self.events.append(track_event);
+        try self.track_events.append(track_event);
     }
 
     // Returns true iff the track event got erased (i.e., was present).
@@ -90,10 +90,10 @@ pub const Track = struct {
     pub fn erase(self: *Self, track_event: TrackEvent) bool {
         var index = self.findNextIndex(track_event.ticks) orelse return false;
         while (index < self.count()) {
-            const index_event = self.events.inBounds(index);
+            const index_event = self.track_events.inBounds(index);
             if (index_event.ticks != track_event.ticks) return false;
             if (index_event.event.equals(track_event.event)) {
-                _ = self.events.remove(index);
+                _ = self.track_events.remove(index);
                 return true;
             }
             index += 1;
@@ -108,19 +108,21 @@ pub const Track = struct {
         return null;
     }
 
-    pub fn allEvents(self: *Self, range: Range) []TrackEvent {
-        // TODO
-        _ = range;
-        return self.events.items();
+    pub fn events(self: *Self, range: Range) []TrackEvent {
+        if (range.toIndexRange(self)) |index_range| {
+            return self.track_events.items()[index_range.start..index_range.end];
+        } else {
+            return &.{};
+        }
     }
 
     // Finds the index of the first event whose `ticks >= at_ticks`.
-    fn findNextIndex(self: *Self, at_ticks: i32) ?usize {
+    fn findNextIndex(self: *const Self, at_ticks: i32) ?usize {
         var low: usize = 0;
-        var high = common.before(self.events.count()) orelse return null;
+        var high = common.before(self.track_events.count()) orelse return null;
         while (true) {
             const middle = (low + high) / 2;
-            if (self.events.inBounds(middle).ticks >= at_ticks) {
+            if (self.track_events.inBounds(middle).ticks >= at_ticks) {
                 if (middle == low) {
                     return middle;
                 }
@@ -128,7 +130,7 @@ pub const Track = struct {
             } else {
                 // events[middle].ticks < at_ticks
                 if (middle == low) {
-                    return if (self.events.inBounds(high).ticks >= at_ticks)
+                    return if (self.track_events.inBounds(high).ticks >= at_ticks)
                         high
                     else
                         null;
@@ -139,15 +141,15 @@ pub const Track = struct {
     }
 
     // Finds the indices of the event whose `ticks >= start_ticks` and `ticks < end_ticks`.
-    fn findNextRange(self: *Self, start_ticks: i32, end_ticks: i32) ?IndexRange {
+    fn findNextRange(self: *const Self, start_ticks: i32, end_ticks: i32) ?IndexRange {
         const start_index = self.findNextIndex(start_ticks) orelse return null;
-        const end_index = self.findNextIndex(end_ticks) orelse self.events.count();
-        return .{ .start_index = start_index, .end_index = end_index };
+        const end_index = self.findNextIndex(end_ticks) orelse self.track_events.count();
+        return .{ .start = start_index, .end = end_index };
     }
 
     const IndexRange = struct {
-        start_index: usize,
-        end_index: usize,
+        start: usize,
+        end: usize,
     };
 
     pub const Range = TrackRange;
@@ -162,11 +164,14 @@ pub const TrackRange = union(enum) {
     tick_range: TickRange,
     all: void,
 
-    fn to_tick_range(self: Self) TickRange {
+    fn toIndexRange(self: Self, track: *const Track) ?Track.IndexRange {
         return switch (self) {
-            .at_ticks => |at_ticks| .{ .start = at_ticks, .end = at_ticks + 1 },
-            .tick_range => |tick_range| tick_range,
-            .all => .{ .start = std.math.minInt(i32), .end = std.math.maxInt(i32) },
+            .at_ticks => |at_ticks| track.findNextRange(at_ticks, at_ticks + 1),
+            .tick_range => |tick_range| track.findNextRange(tick_range.start, tick_range.end),
+            .all => blk: {
+                const count = track.track_events.count();
+                break :blk if (count == 0) null else .{ .start = 0, .end = count };
+            },
         };
     }
 
@@ -323,7 +328,7 @@ test "midi.Track erase works for degenerate case" {
     try events.append(.{ .ticks = 1234, .event = .ports_updated });
     try events.append(.{ .ticks = 6789, .event = .ports_updated });
     try events.append(.{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
-    var track = Track{ .events = events };
+    var track = Track{ .track_events = events };
     defer track.deinit();
 
     try std.testing.expectEqual(
@@ -331,7 +336,7 @@ test "midi.Track erase works for degenerate case" {
         track.erase(.{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } }),
     );
 
-    try track.events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 6789, .event = .ports_updated },
     });
@@ -342,7 +347,7 @@ test "midi.Track erase works for non-degenerate case" {
     try events.append(.{ .ticks = 123, .event = .ports_updated });
     try events.append(.{ .ticks = 456, .event = .ports_updated });
     try events.append(.{ .ticks = 789, .event = .ports_updated });
-    var track = Track{ .events = events };
+    var track = Track{ .track_events = events };
     defer track.deinit();
 
     try std.testing.expectEqual(
@@ -350,7 +355,7 @@ test "midi.Track erase works for non-degenerate case" {
         track.erase(.{ .ticks = 789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } }),
     );
 
-    try track.events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
         .{ .ticks = 123, .event = .ports_updated },
         .{ .ticks = 456, .event = .ports_updated },
         .{ .ticks = 789, .event = .ports_updated },
@@ -361,7 +366,7 @@ test "midi.Track erase works for non-degenerate case" {
         track.erase(.{ .ticks = 123, .event = .ports_updated }),
     );
 
-    try track.events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
         .{ .ticks = 456, .event = .ports_updated },
         .{ .ticks = 789, .event = .ports_updated },
     });
@@ -372,12 +377,12 @@ test "midi.Track insert works for degenerate case" {
     try events.append(.{ .ticks = 1234, .event = .ports_updated });
     try events.append(.{ .ticks = 6789, .event = .ports_updated });
     try events.append(.{ .ticks = 6789, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
-    var track = Track{ .events = events };
+    var track = Track{ .track_events = events };
     defer track.deinit();
 
     try track.insert(.{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
 
-    try track.events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 6789, .event = .ports_updated },
         .{ .ticks = 6789, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
@@ -386,7 +391,7 @@ test "midi.Track insert works for degenerate case" {
 
     try track.insert(.{ .ticks = 1234, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
 
-    try track.events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 1234, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
         .{ .ticks = 6789, .event = .ports_updated },
@@ -399,12 +404,12 @@ test "midi.Track insert works for non-degenerate case" {
     var events = OwnedTrackEvents.init();
     try events.append(.{ .ticks = 1234, .event = .ports_updated });
     try events.append(.{ .ticks = 6789, .event = .ports_updated });
-    var track = Track{ .events = events };
+    var track = Track{ .track_events = events };
     defer track.deinit();
 
     try track.insert(.{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
 
-    try track.events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
         .{ .ticks = 6789, .event = .ports_updated },
@@ -414,7 +419,7 @@ test "midi.Track insert works for non-degenerate case" {
     try track.insert(.{ .ticks = 1000, .event = .{ .note_on = .{ .port = 9, .pitch = 5, .velocity = 4 } } });
     try track.insert(.{ .ticks = 7000, .event = .{ .note_off = .{ .port = 9, .pitch = 5, .velocity = 4 } } });
 
-    try track.events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
         .{ .ticks = 1000, .event = .{ .note_on = .{ .port = 9, .pitch = 5, .velocity = 4 } } },
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
@@ -428,12 +433,45 @@ test "midi.Track binary search works for fully degenerate case" {
     try events.append(.{ .ticks = 123, .event = .ports_updated });
     try events.append(.{ .ticks = 123, .event = .ports_updated });
     try events.append(.{ .ticks = 123, .event = .ports_updated });
-    var track = Track{ .events = events };
+    var track = Track{ .track_events = events };
     defer track.deinit();
 
     try std.testing.expectEqual(0, track.findNextIndex(122));
     try std.testing.expectEqual(0, track.findNextIndex(123));
     try std.testing.expectEqual(null, track.findNextIndex(124));
+
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 123, .event = .ports_updated },
+        },
+        track.events(.all),
+    );
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 123, .event = .ports_updated },
+        },
+        track.events(.{ .at_ticks = 123 }),
+    );
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 123, .event = .ports_updated },
+        },
+        track.events(.{ .tick_range = .{ .start = 123, .end = 456 } }),
+    );
+    try common.expectEqualSlices(
+        &[_]TrackEvent{},
+        track.events(.{ .at_ticks = 124 }),
+    );
+    try common.expectEqualSlices(
+        &[_]TrackEvent{},
+        track.events(.{ .tick_range = .{ .start = 120, .end = 123 } }),
+    );
 }
 
 test "midi.Track binary search works for degenerate case" {
@@ -444,7 +482,7 @@ test "midi.Track binary search works for degenerate case" {
     try events.append(.{ .ticks = 456, .event = .ports_updated });
     try events.append(.{ .ticks = 789, .event = .ports_updated });
     try events.append(.{ .ticks = 789, .event = .ports_updated });
-    var track = Track{ .events = events };
+    var track = Track{ .track_events = events };
     defer track.deinit();
 
     try std.testing.expectEqual(0, track.findNextIndex(122));
@@ -457,6 +495,39 @@ test "midi.Track binary search works for degenerate case" {
     try std.testing.expectEqual(4, track.findNextIndex(789));
 
     try std.testing.expectEqual(null, track.findNextIndex(790));
+
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 456, .event = .ports_updated },
+            .{ .ticks = 456, .event = .ports_updated },
+            .{ .ticks = 789, .event = .ports_updated },
+            .{ .ticks = 789, .event = .ports_updated },
+        },
+        track.events(.all),
+    );
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 123, .event = .ports_updated },
+            .{ .ticks = 123, .event = .ports_updated },
+        },
+        track.events(.{ .at_ticks = 123 }),
+    );
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 456, .event = .ports_updated },
+            .{ .ticks = 456, .event = .ports_updated },
+        },
+        track.events(.{ .at_ticks = 456 }),
+    );
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 789, .event = .ports_updated },
+            .{ .ticks = 789, .event = .ports_updated },
+        },
+        track.events(.{ .at_ticks = 789 }),
+    );
 }
 
 test "midi.Track binary search works for odd-count non-degenerate case" {
@@ -464,7 +535,7 @@ test "midi.Track binary search works for odd-count non-degenerate case" {
     try events.append(.{ .ticks = 123, .event = .ports_updated });
     try events.append(.{ .ticks = 456, .event = .ports_updated });
     try events.append(.{ .ticks = 789, .event = .ports_updated });
-    var track = Track{ .events = events };
+    var track = Track{ .track_events = events };
     defer track.deinit();
 
     try std.testing.expectEqual(0, track.findNextIndex(122));
@@ -477,6 +548,19 @@ test "midi.Track binary search works for odd-count non-degenerate case" {
     try std.testing.expectEqual(2, track.findNextIndex(789));
 
     try std.testing.expectEqual(null, track.findNextIndex(790));
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 456, .event = .ports_updated },
+            .{ .ticks = 789, .event = .ports_updated },
+        },
+        track.events(.{ .tick_range = .{ .start = 456, .end = 790 } }),
+    );
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 123, .event = .ports_updated },
+        },
+        track.events(.{ .tick_range = .{ .start = 123, .end = 456 } }),
+    );
 }
 
 test "midi.Track binary search works for even-count non-degenerate case" {
@@ -485,7 +569,7 @@ test "midi.Track binary search works for even-count non-degenerate case" {
     try events.append(.{ .ticks = 34, .event = .ports_updated });
     try events.append(.{ .ticks = 56, .event = .ports_updated });
     try events.append(.{ .ticks = 78, .event = .ports_updated });
-    var track = Track{ .events = events };
+    var track = Track{ .track_events = events };
     defer track.deinit();
 
     try std.testing.expectEqual(0, track.findNextIndex(11));
@@ -501,6 +585,16 @@ test "midi.Track binary search works for even-count non-degenerate case" {
     try std.testing.expectEqual(3, track.findNextIndex(78));
 
     try std.testing.expectEqual(null, track.findNextIndex(79));
+
+    try common.expectEqualSlices(
+        &[_]TrackEvent{
+            .{ .ticks = 12, .event = .ports_updated },
+            .{ .ticks = 34, .event = .ports_updated },
+            .{ .ticks = 56, .event = .ports_updated },
+            .{ .ticks = 78, .event = .ports_updated },
+        },
+        track.events(.all),
+    );
 }
 
 test "midi.TrackEvent works with equals" {
