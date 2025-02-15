@@ -10,17 +10,6 @@ const OwnedTracks = owned_list.OwnedList(Track);
 
 const std = @import("std");
 
-pub const TrackEvent = struct {
-    ticks: i32,
-    event: Event,
-
-    pub fn equals(a: Self, b: Self) bool {
-        return common.structEqual(a, b);
-    }
-
-    const Self = @This();
-};
-
 pub const Event = union(enum) {
     /// Ports were connected or disconnected.
     ports_updated,
@@ -47,9 +36,21 @@ pub const Note = struct {
     const Self = @This();
 };
 
+pub const TrackEvent = struct {
+    ticks: i32,
+    event: Event,
+
+    pub fn equals(a: Self, b: Self) bool {
+        return common.structEqual(a, b);
+    }
+
+    const Self = @This();
+};
+
 pub const Track = struct {
     // TODO: maybe come up with some cooler data structure here
     // to support efficient insertion/deletion anywhere.
+    // TODO: come up with a `History` class that clones this after every user edit (not individual edit).
     events: OwnedTrackEvents,
 
     pub const Error = error{
