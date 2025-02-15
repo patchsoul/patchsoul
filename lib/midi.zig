@@ -1,28 +1,17 @@
-const FileHelper = @import("file.zig").Helper;
+const common = @import("common.zig");
+const lib_file = @import("file.zig");
 const owned_list = @import("owned_list.zig");
 const Shtick = @import("shtick.zig").Shtick;
 
+const ByteCountReader = lib_file.ByteCountReader;
+const FileHelper = lib_file.Helper;
 const OwnedTrackEvents = owned_list.OwnedList(TrackEvent);
 const OwnedTracks = owned_list.OwnedList(Track);
 
 const std = @import("std");
 
-pub const Track = struct {
-    events: OwnedTrackEvents,
-
-    pub fn init() Self {
-        return Self { .events = OwnedTrackEvents.init() };
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.events.deinit();
-    }
-
-    const Self = @This();
-};
-
 pub const TrackEvent = struct {
-    tick: i32,
+    ticks: i32,
     event: Event,
 };
 
@@ -40,6 +29,108 @@ pub const Note = struct {
     velocity: u8,
 };
 
+pub const Track = struct {
+    // TODO: maybe come up with some cooler data structure here
+    // to support efficient insertion/deletion anywhere.
+    events: OwnedTrackEvents,
+
+    pub fn init() Self {
+        return Self{ .events = OwnedTrackEvents.init() };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.events.deinit();
+    }
+
+    pub fn insert(self: *Self, track_event: TrackEvent) !void {
+        // TODO
+        _ = self;
+        _ = track_event;
+    }
+
+    // Returns true iff the track event got erased (i.e., was present).
+    pub fn erase(self: *Self, track_event: TrackEvent) bool {
+        // TODO
+        _ = self;
+        _ = track_event;
+        return false;
+    }
+
+    pub fn findNext(self: *Self, range: Range) ?TrackEvent {
+        // TODO
+        _ = self;
+        _ = range;
+        return null;
+    }
+
+    pub fn allEvents(self: *Self, range: Range) []TrackEvent {
+        // TODO
+        _ = range;
+        return self.events.items();
+    }
+
+    // Finds the index of the first event whose `ticks >= at_ticks`.
+    fn findNextIndex(self: *Self, at_ticks: i32) ?usize {
+        var low: usize = 0;
+        var high = common.before(self.events.count()) orelse return null;
+        while (true) {
+            const middle = (low + high) / 2;
+            if (self.events.inBounds(middle).ticks >= at_ticks) {
+                if (middle == low) {
+                    return middle;
+                }
+                high = middle;
+            } else {
+                // events[middle].ticks < at_ticks
+                if (middle == low) {
+                    return if (self.events.inBounds(high).ticks >= at_ticks)
+                        high
+                    else
+                        null;
+                }
+                low = middle;
+            }
+        }
+    }
+
+    // Finds the indices of the event whose `ticks >= start_ticks` and `ticks < end_ticks`.
+    fn findNextRange(self: *Self, start_ticks: i32, end_ticks: i32) ?IndexRange {
+        const start_index = self.findNextIndex(start_ticks) orelse return null;
+        const end_index = self.findNextIndex(end_ticks) orelse self.events.count();
+        return .{ .start_index = start_index, .end_index = end_index };
+    }
+
+    const IndexRange = struct {
+        start_index: usize,
+        end_index: usize,
+    };
+
+    pub const Range = TrackRange;
+
+    const Self = @This();
+};
+
+pub const TrackRangeType = enum {
+    at_ticks,
+    tick_range,
+};
+
+pub const TickRange = struct { start: i32, end: i32 };
+
+pub const TrackRange = union(TrackRangeType) {
+    at_ticks: i32,
+    tick_range: TickRange,
+
+    fn to_tick_range(self: Self) TickRange {
+        return switch (self) {
+            .at_ticks => |at_ticks| .{ .start = at_ticks, .end = at_ticks + 1 },
+            .tick_range => |tick_range| tick_range,
+        };
+    }
+
+    const Self = @This();
+};
+
 pub const File = struct {
     pub const max_track_count = 32;
 
@@ -49,7 +140,7 @@ pub const File = struct {
 
     pub const Header = struct {
         track_count: i16 = 0,
-        resolution: i16 = 360,
+        ticks_per_beat: i16 = 360,
     };
 
     path: Shtick,
@@ -112,11 +203,11 @@ pub const File = struct {
             return Error.invalid_midi_file;
         }
         const track_count = try FileHelper.readBigEndian(i16, reader);
-        const resolution = try FileHelper.readBigEndian(i16, reader);
+        const ticks_per_beat = try FileHelper.readBigEndian(i16, reader);
         if (track_count > max_track_count) {
             return Error.invalid_midi_file;
         }
-        return Header{ .track_count = track_count, .resolution = resolution };
+        return Header{ .track_count = track_count, .ticks_per_beat = ticks_per_beat };
     }
 
     fn writeHeader(self: *const Self, writer: anytype) !void {
@@ -133,7 +224,7 @@ pub const File = struct {
         try FileHelper.writeBigEndian(writer, format);
 
         try FileHelper.writeBigEndian(writer, track_count);
-        try FileHelper.writeBigEndian(writer, self.header.resolution);
+        try FileHelper.writeBigEndian(writer, self.header.ticks_per_beat);
     }
 
     fn readTracks(reader: anytype) !OwnedTracks {
@@ -163,6 +254,17 @@ pub const File = struct {
         const track = Track.init();
         errdefer track.deinit();
 
+        //const track_byte_count = try FileHelper.readBigEndian(u32, reader);
+        //var byte_counter = ByteCountReader(@TypeOf(reader)).init(reader);
+
+        //var tick: i32 = 0;
+        //var last_status: u8 = 0;
+
+        //while (true) {
+        //    tick += try FileHelper.readVariableCount(i32, &byte_counter);
+
+        //}
+
         return track;
     }
 
@@ -173,3 +275,59 @@ pub const File = struct {
 
     const Self = @This();
 };
+
+test "midi.Track binary search works for fully degenerate case" {
+    var events = OwnedTrackEvents.init();
+    try events.append(.{ .ticks = 123, .event = .ports_updated });
+    try events.append(.{ .ticks = 123, .event = .ports_updated });
+    try events.append(.{ .ticks = 123, .event = .ports_updated });
+    var track = Track{ .events = events };
+    defer track.deinit();
+
+    try std.testing.expectEqual(0, track.findNextIndex(122));
+    try std.testing.expectEqual(0, track.findNextIndex(123));
+    try std.testing.expectEqual(null, track.findNextIndex(124));
+}
+
+test "midi.Track binary search works for degenerate case" {
+    var events = OwnedTrackEvents.init();
+    try events.append(.{ .ticks = 123, .event = .ports_updated });
+    try events.append(.{ .ticks = 123, .event = .ports_updated });
+    try events.append(.{ .ticks = 456, .event = .ports_updated });
+    try events.append(.{ .ticks = 456, .event = .ports_updated });
+    try events.append(.{ .ticks = 789, .event = .ports_updated });
+    try events.append(.{ .ticks = 789, .event = .ports_updated });
+    var track = Track{ .events = events };
+    defer track.deinit();
+
+    try std.testing.expectEqual(0, track.findNextIndex(122));
+    try std.testing.expectEqual(0, track.findNextIndex(123));
+
+    try std.testing.expectEqual(2, track.findNextIndex(455));
+    try std.testing.expectEqual(2, track.findNextIndex(456));
+
+    try std.testing.expectEqual(4, track.findNextIndex(788));
+    try std.testing.expectEqual(4, track.findNextIndex(789));
+
+    try std.testing.expectEqual(null, track.findNextIndex(790));
+}
+
+test "midi.Track binary search works for non-degenerate case" {
+    var events = OwnedTrackEvents.init();
+    try events.append(.{ .ticks = 123, .event = .ports_updated });
+    try events.append(.{ .ticks = 456, .event = .ports_updated });
+    try events.append(.{ .ticks = 789, .event = .ports_updated });
+    var track = Track{ .events = events };
+    defer track.deinit();
+
+    try std.testing.expectEqual(0, track.findNextIndex(122));
+    try std.testing.expectEqual(0, track.findNextIndex(123));
+
+    try std.testing.expectEqual(1, track.findNextIndex(455));
+    try std.testing.expectEqual(1, track.findNextIndex(456));
+
+    try std.testing.expectEqual(2, track.findNextIndex(788));
+    try std.testing.expectEqual(2, track.findNextIndex(789));
+
+    try std.testing.expectEqual(null, track.findNextIndex(790));
+}

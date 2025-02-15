@@ -13,7 +13,7 @@ pub fn main() !void {
     // Try some junk
     var midi_file = lib.midi.File.init(Shtick.unallocated("flourish.mid"));
     defer midi_file.deinit();
-    std.debug.assert(midi_file.header.resolution == 384);
+    std.debug.assert(midi_file.header.ticks_per_beat == 384);
     std.debug.assert(midi_file.header.track_count == 16);
     // Don't overwrite flourish.mid!
     midi_file.path = Shtick.unallocated("test.mid");

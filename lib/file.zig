@@ -9,9 +9,13 @@ pub const File = struct {
 };
 
 pub const Helper = struct {
+    pub const Error = error{
+        invalid_variable_count,
+    };
+
     pub fn readBytes(N: comptime_int, reader: anytype) ![N]u8 {
         var data: [N]u8 = undefined;
-        _ = try reader.readNoEof(&data);
+        try reader.readNoEof(&data);
         return data;
     }
 
@@ -25,11 +29,6 @@ pub const Helper = struct {
         return if (common.isLittleEndian()) @byteSwap(t) else t;
     }
 
-    inline fn readPrimitive(comptime T: type, reader: anytype) !T {
-        const data = try readBytes(@sizeOf(T), reader);
-        return @bitCast(data);
-    }
-
     pub fn writeLittleEndian(writer: anytype, t: anytype) !void {
         const to_write = if (common.isLittleEndian()) t else @byteSwap(t);
         try writePrimitive(writer, to_write);
@@ -40,19 +39,36 @@ pub const Helper = struct {
         try writePrimitive(writer, to_write);
     }
 
+    inline fn readPrimitive(comptime T: type, reader: anytype) !T {
+        const data = try readBytes(@sizeOf(T), reader);
+        return @bitCast(data);
+    }
+
     inline fn writePrimitive(writer: anytype, t: anytype) !void {
         const data: [@sizeOf(@TypeOf(t))]u8 = @bitCast(t);
         try writer.writeAll(&data);
     }
+
+    pub fn readVariableCount(comptime T: type, reader: anytype) !T {
+        var result: T = 0;
+        for (0..@sizeOf(T)) |_| {
+            const next_value = try readPrimitive(u8, reader);
+            result = (result << 7) | (next_value & 127);
+            if (next_value & 128 == 0) {
+                return result;
+            }
+        }
+        return Error.invalid_variable_count;
+    }
 };
 
-fn ByteCountReader(comptime T: type) type {
+pub fn ByteCountReader(comptime T: type) type {
     return struct {
         reader: T,
         count: usize = 0,
 
         pub fn init(reader: T) Self {
-            return Self { .reader = reader };
+            return Self{ .reader = reader };
         }
 
         pub fn readNoEof(self: *Self, buf: []u8) !void {
@@ -66,5 +82,5 @@ fn ByteCountReader(comptime T: type) type {
         }
 
         const Self = @This();
-    }
+    };
 }
