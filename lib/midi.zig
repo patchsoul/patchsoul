@@ -379,6 +379,14 @@ test "midi.TrackEvent works with equals" {
             TrackEvent{ .ticks = 123, .event = .ports_updated },
         ),
     );
+    const note_on = TrackEvent{ .ticks = 123, .event = .{ .note_on = Note{ .port = 0, .pitch = 1, .velocity = 2 } } };
+    try std.testing.expectEqual(true, note_on.equals(note_on));
+    const note_off = TrackEvent{ .ticks = 123, .event = .{ .note_off = Note{ .port = 0, .pitch = 1, .velocity = 2 } } };
+    try std.testing.expectEqual(true, note_off.equals(note_off));
+
+    // events are different (note_on vs. note_off)
+    try std.testing.expectEqual(false, note_on.equals(note_off));
+
     // ticks are different
     try std.testing.expectEqual(
         false,
@@ -386,20 +394,11 @@ test "midi.TrackEvent works with equals" {
             TrackEvent{ .ticks = 456, .event = .ports_updated },
         ),
     );
-    // events are different (note_on vs. note_off)
-    try std.testing.expectEqual(
-        false,
-        (TrackEvent{ .ticks = 123, .event = .{ .note_on = Note{ .port = 0, .pitch = 1, .velocity = 2 } } }).equals(
-            TrackEvent{ .ticks = 123, .event = .{ .note_off = Note{ .port = 0, .pitch = 1, .velocity = 2 } } },
-        ),
-    );
+
     // events are different (note_on specifics)
-    try std.testing.expectEqual(
-        false,
-        (TrackEvent{ .ticks = 123, .event = .{ .note_on = Note{ .port = 0, .pitch = 1, .velocity = 3 } } }).equals(
-            TrackEvent{ .ticks = 123, .event = .{ .note_on = Note{ .port = 0, .pitch = 1, .velocity = 2 } } },
-        ),
-    );
+    var note_on2 = note_on;
+    note_on2.event.note_on.velocity += 1;
+    try std.testing.expectEqual(false, note_on2.equals(note_on));
 }
 
 test "midi.Note works with equals" {
