@@ -2,6 +2,7 @@ const context = @import("context.zig");
 const Harmony = @import("Harmony.zig");
 const Event = @import("event.zig").Event;
 const lib = @import("lib");
+const Piano = @import("Piano.zig");
 const RtAudio = @import("rtaudio").RtAudio;
 const RtMidi = @import("rtmidi").RtMidi;
 const vaxis = @import("vaxis");
@@ -27,6 +28,7 @@ midi_connected: bool = false,
 last_port_count: usize = 0,
 port_update_message: lib.Shtick,
 log_file: ?std.fs.File,
+piano: Piano,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     // TODO: make this a command-line option, defaulting to SoundFont.sf2 if nothing else is passed in.
@@ -40,6 +42,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         },
         .rtaudio = RtAudio.init(),
         .rtmidi = RtMidi.init() catch null,
+        .piano = Piano.init(),
         .port_update_message = lib.Shtick.withCapacity(100) catch {
             @panic("should have enough capacity");
         },
@@ -58,6 +61,7 @@ pub fn deinit(self: *Self) void {
         file.close();
         self.log_file = null;
     }
+    self.piano.deinit();
     self.harmony.deinit();
 }
 
@@ -168,8 +172,16 @@ pub fn draw(self: *Self, ctx: *context.Windowed) void {
         try self.drawMidiConnected(ctx);
     }
     try self.drawPortConnected(ctx);
+
+    try ctx.drawChild(&self.piano, .{
+        .x_off = 0,
+        .y_off = ctx.window.height - 2,
+        .width = .{ .limit = ctx.window.width },
+        .height = .{ .limit = 2 },
+    });
 }
 
+// TODO: migrate this to a child text container.
 fn drawMidiConnected(self: *Self, ctx: *context.Windowed) !void {
     const msg = "midi ports connected";
 
@@ -192,13 +204,15 @@ fn drawMidiConnected(self: *Self, ctx: *context.Windowed) !void {
     _ = try child.printSegment(.{ .text = msg, .style = style }, .{});
 }
 
+// TODO: migrate this to a child text container.
 fn drawPortConnected(self: *Self, ctx: *context.Windowed) !void {
     const msg = self.port_update_message.slice();
+    const length = self.port_update_message.capacity();
 
     const child = ctx.window.child(.{
-        .x_off = 0,
-        .y_off = ctx.window.height - 2,
-        .width = .{ .limit = self.port_update_message.capacity() },
+        .x_off = ctx.window.width - length,
+        .y_off = ctx.window.height - 5,
+        .width = .{ .limit = length },
         .height = .{ .limit = 1 },
     });
 
