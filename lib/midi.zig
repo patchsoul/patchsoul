@@ -185,6 +185,7 @@ pub const File = struct {
 
     path: Shtick,
     header: Header,
+    // TODO: use MaxSizeList for the track list (max of 32).
     tracks: OwnedTracks,
 
     pub fn deinit(self: *Self) void {

@@ -1,3 +1,4 @@
+const Harmony = @import("Harmony.zig");
 const Event = @import("event.zig").Event;
 const lib = @import("lib");
 const RtAudio = @import("rtaudio").RtAudio;
@@ -18,6 +19,7 @@ allocator: std.mem.Allocator,
 should_quit: bool = false,
 tty: vaxis.Tty,
 vx: vaxis.Vaxis,
+harmony: Harmony,
 rtaudio: RtAudio,
 rtmidi: ?RtMidi,
 /// Mouse event to be handled during draw cycle.
@@ -27,29 +29,27 @@ last_port_count: usize = 0,
 port_update_message: lib.Shtick,
 needs_full_redraw: bool = true,
 log_file: ?std.fs.File,
-sound_font: zsynth.SoundFont,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     // TODO: make this a command-line option, defaulting to SoundFont.sf2 if nothing else is passed in.
-    var sf2 = std.fs.cwd().openFile("SoundFont.sf2", .{}) catch {
-        @panic("Copy a sound font like TimGM6mb.sf2 or FluidR3_GM.sf2 into the patchsoul directory as SoundFont.sf2");
-    };
+    const sound_font_path = lib.Shtick.unallocated("SoundFont.sf2");
     return .{
         .allocator = allocator,
         .tty = try vaxis.Tty.init(),
         .vx = try vaxis.init(allocator, .{}),
+        .harmony = Harmony.init(sound_font_path) catch {
+            @panic("Copy a sound font like TimGM6mb.sf2 or FluidR3_GM.sf2 into the patchsoul directory as SoundFont.sf2");
+        },
         .rtaudio = RtAudio.init(),
         .rtmidi = RtMidi.init() catch null,
         .port_update_message = lib.Shtick.withCapacity(100) catch {
             @panic("should have enough capacity");
         },
         .log_file = std.fs.cwd().createFile("wim.out", .{}) catch null,
-        .sound_font = try zsynth.SoundFont.init(lib.common.allocator, sf2.reader()),
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.sound_font.deinit();
     self.vx.deinit(self.allocator, self.ttyWriter());
     self.tty.deinit();
     if (self.rtmidi) |*rtmidi| {
@@ -60,13 +60,14 @@ pub fn deinit(self: *Self) void {
         file.close();
         self.log_file = null;
     }
+    self.harmony.deinit();
 }
 
 fn midiCallback(loop: *vaxis.Loop(Event), event: RtMidi.Event) void {
     loop.postEvent(.{ .midi = event });
 }
 
-fn sample_ziggy(data: *anyopaque, samples: []Sample) void {
+fn sampleZiggy(data: *anyopaque, samples: []Sample) void {
     const synthesizer: *zsynth.Synthesizer = @alignCast(@ptrCast(data));
     var buffer_left: [512]f32 = undefined;
     var buffer_right: [512]f32 = undefined;
@@ -93,12 +94,9 @@ pub fn run(self: *Self) !void {
     if (self.rtmidi) |*rtmidi| {
         rtmidi.start(.{ .ms = 1 }, &loop, midiCallback);
     }
-    var settings = zsynth.SynthesizerSettings.init(RtAudio.frequency_hz);
-    var synthesizer = try zsynth.Synthesizer.init(lib.common.allocator, &self.sound_font, &settings);
-    defer synthesizer.deinit();
     self.rtaudio.callable = .{
-        .data = &synthesizer,
-        .callback = sample_ziggy,
+        .data = &self.harmony.synthesizer,
+        .callback = sampleZiggy,
     };
     self.rtaudio.start() catch {
         @panic("can't start RtAudio, but this is required");
@@ -108,7 +106,7 @@ pub fn run(self: *Self) !void {
     while (!self.should_quit) {
         loop.pollEvent();
         while (loop.tryEvent()) |event| {
-            try self.update(&synthesizer, event);
+            try self.update(&self.harmony, event);
         }
 
         self.draw();
@@ -119,8 +117,11 @@ pub fn run(self: *Self) !void {
     }
 }
 
-pub fn update(self: *Self, synthesizer: *zsynth.Synthesizer, event: Event) !void {
+pub fn update(self: *Self, harmony: *Harmony, event: Event) !void {
     switch (event) {
+        .redraw_request => {
+            self.needs_full_redraw = true;
+        },
         .key_press => |key| {
             if (key.matches('c', .{ .ctrl = true }))
                 self.should_quit = true;
@@ -144,15 +145,10 @@ pub fn update(self: *Self, synthesizer: *zsynth.Synthesizer, event: Event) !void
                 }
             },
             .note_on => |note_on| {
-                const normalized_velocity: u8 = 64 + note_on.velocity / 2;
-                synthesizer.noteOn(0, note_on.pitch, normalized_velocity);
-                // TODO: whether recording or not, put into a "master midi file" that you can open read-only
-                // and copy from.  master midi file "sleeps" if there's no input for a while.
+                harmony.noteOn(note_on.pitch, note_on.velocity);
             },
             .note_off => |note_off| {
-                // we ignore note_off velocity in ziggysynth.
-                synthesizer.noteOff(0, note_off.pitch);
-                // TODO: add to master midi file
+                harmony.noteOff(note_off.pitch, note_off.velocity);
             },
         },
         .winsize => |ws| {
