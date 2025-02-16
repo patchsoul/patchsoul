@@ -4,10 +4,11 @@ const zsynth = @import("ziggysynth");
 
 const std = @import("std");
 
+const ActivePitches = lib.OneTwoEight;
 const Harmony = @This();
 const Self = @This();
 
-active_pitches: [128]u8 = .{0} ** 128,
+active_pitches: ActivePitches = ActivePitches{},
 synthesizer: zsynth.Synthesizer,
 sound_font: *zsynth.SoundFont,
 log_file: ?std.fs.File,
@@ -20,7 +21,9 @@ pub fn init(sound_font_path: lib.Shtick) !Self {
     sound_font.* = try zsynth.SoundFont.init(lib.common.allocator, sf2.reader());
     var settings = zsynth.SynthesizerSettings.init(RtAudio.frequency_hz);
     const synthesizer = try zsynth.Synthesizer.init(lib.common.allocator, sound_font, &settings);
-    return Self{ .synthesizer = synthesizer, .sound_font = sound_font,
+    return Self{
+        .synthesizer = synthesizer,
+        .sound_font = sound_font,
         .log_file = std.fs.cwd().createFile("harmony.out", .{}) catch null,
     };
 }
@@ -40,6 +43,7 @@ pub fn noteOn(self: *Self, pitch: u8, velocity: u8) void {
     // a velocity of 0 is considered a `noteOff` in ziggysynth, so normalize the velocity a bit.
     const normalized_velocity: u8 = 64 + velocity / 2;
     self.synthesizer.noteOn(channel, pitch, normalized_velocity);
+    self.active_pitches.setOn(pitch);
     // TODO: whether recording or not, put into a "master midi file" that you can open read-only
     // and copy from.  master midi file "sleeps" if there's no input for a while.
     // make the master midi file have i64 ticks and 5040 resolution (ticks/beat).
@@ -52,6 +56,7 @@ pub fn noteOff(self: *Self, pitch: u8, velocity: u8) void {
     _ = velocity;
     const channel: i32 = 0;
     self.synthesizer.noteOff(channel, pitch);
+    self.active_pitches.setOff(pitch);
     // TODO: add to master midi file
 }
 

@@ -15,7 +15,9 @@ pub fn update(self: *Self, harmony: *Harmony, event: Event) !void {
         .redraw_request => {
             self.needs_full_redraw = true;
         },
-        .midi => |midi| switch (midi) {},
+        .midi => |midi| switch (midi) {
+            // TODO:
+        },
     }
 }
 
