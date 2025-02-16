@@ -1,3 +1,4 @@
+const context = @import("context.zig");
 const Harmony = @import("Harmony.zig");
 const Event = @import("event.zig").Event;
 const lib = @import("lib");
@@ -22,12 +23,9 @@ vx: vaxis.Vaxis,
 harmony: Harmony,
 rtaudio: RtAudio,
 rtmidi: ?RtMidi,
-/// Mouse event to be handled during draw cycle.
-mouse: ?vaxis.Mouse = null,
 midi_connected: bool = false,
 last_port_count: usize = 0,
 port_update_message: lib.Shtick,
-needs_full_redraw: bool = true,
 log_file: ?std.fs.File,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
@@ -105,11 +103,13 @@ pub fn run(self: *Self) !void {
 
     while (!self.should_quit) {
         loop.pollEvent();
+        var windowless = context.Windowless{ .harmony = &self.harmony };
         while (loop.tryEvent()) |event| {
-            try self.update(&self.harmony, event);
+            try self.update(&windowless, event);
         }
 
-        self.draw();
+        var windowed = windowless.windowed(&self.vx);
+        self.draw(&windowed);
 
         var buffered = self.tty.bufferedWriter();
         try self.vx.render(buffered.writer().any());
@@ -117,16 +117,16 @@ pub fn run(self: *Self) !void {
     }
 }
 
-pub fn update(self: *Self, harmony: *Harmony, event: Event) !void {
+pub fn update(self: *Self, ctx: *context.Windowless, event: Event) !void {
     switch (event) {
         .redraw_request => {
-            self.needs_full_redraw = true;
+            ctx.needs_full_redraw = true;
         },
         .key_press => |key| {
             if (key.matches('c', .{ .ctrl = true }))
                 self.should_quit = true;
         },
-        .mouse => |mouse| self.mouse = mouse,
+        .mouse => |mouse| ctx.mouse = mouse,
         .midi => |midi| switch (midi) {
             .ports_updated => if (self.rtmidi) |rtmidi| {
                 const new_port_count = rtmidi.portCount();
@@ -145,48 +145,46 @@ pub fn update(self: *Self, harmony: *Harmony, event: Event) !void {
                 }
             },
             .note_on => |note_on| {
-                harmony.noteOn(note_on.pitch, note_on.velocity);
+                ctx.harmony.noteOn(note_on.pitch, note_on.velocity);
             },
             .note_off => |note_off| {
-                harmony.noteOff(note_off.pitch, note_off.velocity);
+                ctx.harmony.noteOff(note_off.pitch, note_off.velocity);
             },
         },
         .winsize => |ws| {
             try self.vx.resize(self.allocator, self.ttyWriter(), ws);
-            self.needs_full_redraw = true;
+            ctx.needs_full_redraw = true;
         },
         else => {},
     }
 }
-pub fn draw(self: *Self) void {
-    const window = self.vx.window();
-
-    if (self.needs_full_redraw) {
-        window.clear();
+pub fn draw(self: *Self, ctx: *context.Windowed) void {
+    if (ctx.needs_full_redraw) {
+        ctx.window.clear();
     }
     self.vx.setMouseShape(.default);
 
     if (self.midi_connected) {
-        try self.drawMidiConnected(window);
+        try self.drawMidiConnected(ctx);
     }
-    try self.drawPortConnected(window);
+    try self.drawPortConnected(ctx);
 }
 
-fn drawMidiConnected(self: *Self, window: vaxis.Window) !void {
+fn drawMidiConnected(self: *Self, ctx: *context.Windowed) !void {
     const msg = "midi ports connected";
 
-    const child = window.child(.{
-        .x_off = (window.width - msg.len) / 2,
-        .y_off = window.height / 2 - 2,
+    const child = ctx.window.child(.{
+        .x_off = (ctx.window.width - msg.len) / 2,
+        .y_off = ctx.window.height / 2 - 2,
         .width = .{ .limit = msg.len },
         .height = .{ .limit = 1 },
     });
 
     // Mouse events are easier to handle in the draw cycle, because we can check
     // if the event occurred in the target window.
-    const style: vaxis.Style = if (child.hasMouse(self.mouse)) |_| blk: {
+    const style: vaxis.Style = if (child.hasMouse(ctx.mouse)) |_| blk: {
         // We handled the mouse event, so set it to null
-        self.mouse = null;
+        ctx.mouse = null;
         self.vx.setMouseShape(.pointer);
         break :blk .{ .reverse = true };
     } else .{};
@@ -194,12 +192,12 @@ fn drawMidiConnected(self: *Self, window: vaxis.Window) !void {
     _ = try child.printSegment(.{ .text = msg, .style = style }, .{});
 }
 
-fn drawPortConnected(self: *Self, window: vaxis.Window) !void {
+fn drawPortConnected(self: *Self, ctx: *context.Windowed) !void {
     const msg = self.port_update_message.slice();
 
-    const child = window.child(.{
+    const child = ctx.window.child(.{
         .x_off = 0,
-        .y_off = window.height - 2,
+        .y_off = ctx.window.height - 2,
         .width = .{ .limit = self.port_update_message.capacity() },
         .height = .{ .limit = 1 },
     });
