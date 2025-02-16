@@ -2,16 +2,18 @@ const common = @import("common.zig");
 
 const std = @import("std");
 
-const OwnedListError = error{
+const MaxSizeListError = error{
     out_of_bounds,
-    out_of_memory,
+    out_of_space,
 };
 
-pub fn OwnedList(comptime T: type) type {
+// Guarantees pointer stability as long as the list itself isn't moved.
+pub fn MaxSizeList(N: comptime_int, comptime T: type) type {
     return struct {
         const Self = @This();
 
-        array: std.ArrayListUnmanaged(T) = std.ArrayListUnmanaged(T){},
+        internal_count: usize = 0,
+        array: [N]T = undefined,
 
         pub inline fn init() Self {
             return .{};
@@ -28,70 +30,92 @@ pub fn OwnedList(comptime T: type) type {
             if (std.meta.hasMethod(T, "deinit")) {
                 self.clear();
             }
-            self.array.deinit(common.allocator);
         }
 
-        pub inline fn items(self: *const Self) []T {
-            return self.array.items;
+        pub inline fn items(self: *Self) []T {
+            return self.array[0..self.count()];
         }
 
         pub inline fn count(self: *const Self) usize {
-            return self.array.items.len;
+            return self.internal_count;
         }
 
         /// Does not return a clone, don't deinit.
         pub inline fn inBounds(self: *const Self, index: usize) T {
-            return self.array.items[index];
+            return self.array[index];
         }
 
         pub inline fn maybe(self: *const Self, index: usize) ?T {
             return if (index < self.count())
-                self.array.items[index]
+                self.array[index]
             else
                 null;
         }
 
         // Returns a value, make sure to `deinit()` it if necessary.
         pub inline fn remove(self: *Self, index: usize) ?T {
-            return if (index < self.count())
-                self.array.orderedRemove(index)
-            else
-                null;
+            if (index >= self.count()) {
+                return null;
+            }
+            const result = self.array[index];
+            var i = index;
+            while (i + 1 < self.count()) {
+                self.array[i] = self.array[i + 1];
+                i += 1;
+            }
+            self.internal_count -= 1;
+            return result;
         }
 
         // Returns the value at the start of the list, make sure to `deinit()` it if necessary.
         pub inline fn shift(self: *Self) ?T {
-            return if (self.count() > 0)
-                self.array.orderedRemove(0)
-            else
-                null;
+            return self.remove(0);
         }
 
         // Returns the value at the end of the list, make sure to `deinit()` it if necessary.
         pub inline fn pop(self: *Self) ?T {
             const last_index = common.before(self.count()) orelse return null;
-            return self.array.orderedRemove(last_index);
+            const result = self.array[last_index];
+            self.internal_count -= 1;
+            return result;
         }
 
-        /// This list will take ownership of `t`.
-        pub inline fn append(self: *Self, t: T) !void {
-            self.array.append(common.allocator, t) catch {
-                return OwnedListError.out_of_memory;
-            };
+        /// This list will take ownership of `item`.
+        pub inline fn append(self: *Self, item: T) !void {
+            if (self.internal_count >= N) {
+                return MaxSizeListError.out_of_space;
+            }
+            self.array[self.internal_count] = item;
+            self.internal_count += 1;
         }
 
-        /// This list will take ownership of all `items`.
+        /// This list will take ownership of all `more_items`.
+        /// If the total count after adding `more_items` will be out of bounds,
+        /// then we fail early (no eager appending).
         pub inline fn appendAll(self: *Self, more_items: []const T) !void {
-            self.array.appendSlice(common.allocator, more_items) catch {
-                return OwnedListError.out_of_memory;
-            };
+            if (self.count() + more_items.len > N) {
+                return MaxSizeListError.out_of_space;
+            }
+            for (more_items) |item| {
+                self.array[self.internal_count] = item;
+                self.internal_count += 1;
+            }
         }
 
-        pub inline fn insert(self: *Self, at_index: usize, item: T) !void {
-            std.debug.assert(at_index <= self.count());
-            self.array.insert(common.allocator, at_index, item) catch {
-                return OwnedListError.out_of_memory;
-            };
+        pub inline fn insert(self: *Self, index: usize, item: T) !void {
+            if (self.internal_count >= N) {
+                return MaxSizeListError.out_of_space;
+            }
+            if (index > self.internal_count) {
+                return MaxSizeListError.out_of_bounds;
+            }
+            var i = self.internal_count;
+            while (i > index) {
+                self.array[i] = self.array[i - 1];
+                i -= 1;
+            }
+            self.array[index] = item;
+            self.internal_count += 1;
         }
 
         pub inline fn clear(self: *Self) void {
@@ -102,12 +126,11 @@ pub fn OwnedList(comptime T: type) type {
                 //    t.deinit();
                 //}
                 while (true) {
-                    var t: T = self.array.popOrNull() orelse break;
+                    var t: T = self.pop() orelse break;
                     t.deinit();
                 }
-            } else {
-                self.array.clearRetainingCapacity();
             }
+            self.internal_count = 0;
         }
 
         pub inline fn expectEquals(self: Self, other: Self) !void {
@@ -135,7 +158,7 @@ pub fn OwnedList(comptime T: type) type {
 }
 
 test "insert works at end" {
-    var list = OwnedList(u32).init();
+    var list = MaxSizeList(5, u32).init();
     defer list.deinit();
 
     try list.insert(0, 54);
@@ -147,7 +170,7 @@ test "insert works at end" {
 }
 
 test "insert works at start" {
-    var list = OwnedList(u8).init();
+    var list = MaxSizeList(3, u8).init();
     defer list.deinit();
 
     try list.insert(0, 100);
@@ -159,7 +182,7 @@ test "insert works at start" {
 
 test "clear gets rid of everything" {
     const Shtick = @import("shtick.zig").Shtick;
-    var list = OwnedList(Shtick).init();
+    var list = MaxSizeList(2, Shtick).init();
     defer list.deinit();
 
     try list.append(try Shtick.init("over fourteen" ** 4));

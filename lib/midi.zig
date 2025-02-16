@@ -101,13 +101,6 @@ pub const Track = struct {
         return false;
     }
 
-    pub fn findNext(self: *Self, range: Range) ?TrackEvent {
-        // TODO
-        _ = self;
-        _ = range;
-        return null;
-    }
-
     pub fn events(self: *Self, range: Range) []TrackEvent {
         if (range.toIndexRange(self)) |index_range| {
             return self.track_events.items()[index_range.start..index_range.end];
