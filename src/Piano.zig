@@ -115,18 +115,18 @@ fn maybeActivatedStyle(pitch: u7, activated: bool) context.Style {
         };
     } else {
         return switch (pitch % 12) {
-            0 => .{ .reverse = false, .bg = .{ .index = 226 } }, // C
-            1 => .{ .reverse = false, .bg = .{ .index = 22 } }, // C# or Db
-            2 => .{ .reverse = false, .bg = .{ .index = 76 } }, // D
-            3 => .{ .reverse = false, .bg = .{ .index = 30 } }, // D# or Eb
-            4 => .{ .reverse = false, .bg = .{ .index = 51 } }, // E
-            5 => .{ .reverse = false, .bg = .{ .index = 27 } }, // F
-            6 => .{ .reverse = false, .bg = .{ .index = 20 } }, // F# or Gb
-            7 => .{ .reverse = false, .bg = .{ .index = 165 } }, // G
-            8 => .{ .reverse = false, .bg = .{ .index = 54 } }, // G# or Ab
-            9 => .{ .reverse = false, .bg = .{ .index = 196 } }, // A
-            10 => .{ .reverse = false, .bg = .{ .index = 130 } }, // A# or Bb
-            11 => .{ .reverse = false, .bg = .{ .index = 208 } }, // B
+            0 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 226 } }, // C
+            1 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 22 } }, // C# or Db
+            2 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 76 } }, // D
+            3 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 30 } }, // D# or Eb
+            4 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 51 } }, // E
+            5 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 27 } }, // F
+            6 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 20 } }, // F# or Gb
+            7 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 165 } }, // G
+            8 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 54 } }, // G# or Ab
+            9 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 196 } }, // A
+            10 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 130 } }, // A# or Bb
+            11 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 208 } }, // B
             else => unreachable,
         };
     }
