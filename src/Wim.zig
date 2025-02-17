@@ -150,11 +150,11 @@ pub fn update(self: *Self, ctx: *context.Windowless, event: Event) !void {
             },
             .note_on => |note_on| {
                 ctx.harmony.noteOn(note_on.pitch, note_on.velocity);
-                try self.piano.update(.{ .note_on = note_on });
+                self.piano.update(.{ .note_on = note_on });
             },
             .note_off => |note_off| {
                 ctx.harmony.noteOff(note_off.pitch, note_off.velocity);
-                try self.piano.update(.{ .note_off = note_off });
+                self.piano.update(.{ .note_off = note_off });
             },
         },
         .winsize => |ws| {
