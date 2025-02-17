@@ -75,79 +75,59 @@ fn maybeActivate(self: *Self, ctx: *context.Windowed, activated: bool) !void {
 
 // TODO: when in a different key, use the correct C#/Db flats vs. sharps, etc.
 fn upperKeySegment(pitch: u7, activated: bool) context.Segment {
-    if (activated) {
-        return activatedKeySegment(pitch);
-    }
-    return switch (pitch % 12) {
-        0 => .{ .text = " ", .style = .{ .reverse = true } }, // C
-        1 => .{ .text = " ", .style = .{ .reverse = false } }, // C# or Db
-        2 => .{ .text = " ", .style = .{ .reverse = true } }, // D
-        3 => .{ .text = " ", .style = .{ .reverse = false } }, // D# or Eb
-        4 => .{ .text = " ", .style = .{ .reverse = true } }, // E
-        5 => .{ .text = " ", .style = .{ .reverse = true } }, // F
-        6 => .{ .text = " ", .style = .{ .reverse = false } }, // F# or Gb
-        7 => .{ .text = " ", .style = .{ .reverse = true } }, // G
-        8 => .{ .text = " ", .style = .{ .reverse = false } }, // G# or Ab
-        9 => .{ .text = " ", .style = .{ .reverse = true } }, // A
-        10 => .{ .text = " ", .style = .{ .reverse = false } }, // A# or Bb
-        11 => .{ .text = " ", .style = .{ .reverse = true } }, // B
-        else => unreachable,
-    };
+    return .{ .text = " ", .style = maybeActivatedStyle(pitch, activated) };
 }
 
 fn lowerKeySegment(pitch: u7, activated: bool) context.Segment {
     return switch (pitch % 12) {
-        0 => if (activated)
-            activatedKeySegment(pitch)
-        else
-            .{ .text = "C", .style = .{ .reverse = true } },
+        0 => .{ .text = "C", .style = maybeActivatedStyle(pitch, activated) },
         1 => .{ .text = "░", .style = .{ .reverse = false } }, // C# or Db
-        2 => if (activated)
-            activatedKeySegment(pitch)
-        else
-            .{ .text = "D", .style = .{ .reverse = true } },
+        2 => .{ .text = "D", .style = maybeActivatedStyle(pitch, activated) },
         3 => .{ .text = "░", .style = .{ .reverse = false } }, // D# or Eb
-        4 => if (activated)
-            activatedKeySegment(pitch)
-        else
-            .{ .text = "E", .style = .{ .reverse = true } },
-        5 => if (activated)
-            activatedKeySegment(pitch)
-        else
-            .{ .text = "F", .style = .{ .reverse = true } },
+        4 => .{ .text = "E", .style = maybeActivatedStyle(pitch, activated) },
+        5 => .{ .text = "F", .style = maybeActivatedStyle(pitch, activated) },
         6 => .{ .text = "░", .style = .{ .reverse = false } }, // F# or Gb
-        7 => if (activated)
-            activatedKeySegment(pitch)
-        else
-            .{ .text = "G", .style = .{ .reverse = true } },
+        7 => .{ .text = "G", .style = maybeActivatedStyle(pitch, activated) },
         8 => .{ .text = "░", .style = .{ .reverse = false } }, // G# or Ab
-        9 => if (activated)
-            activatedKeySegment(pitch)
-        else
-            .{ .text = "A", .style = .{ .reverse = true } },
+        9 => .{ .text = "A", .style = maybeActivatedStyle(pitch, activated) },
         10 => .{ .text = "░", .style = .{ .reverse = false } }, // A# or Bb
-        11 => if (activated)
-            activatedKeySegment(pitch)
-        else
-            .{ .text = "B", .style = .{ .reverse = true } },
+        11 => .{ .text = "B", .style = maybeActivatedStyle(pitch, activated) },
         else => unreachable,
     };
 }
 
-fn activatedKeySegment(pitch: u7) context.Segment {
-    return switch (pitch % 12) {
-        0 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 226 } } }, // C
-        1 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 22 } } }, // C# or Db
-        2 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 76 } } }, // D
-        3 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 24 } } }, // D# or Eb
-        4 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 51 } } }, // E
-        5 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 27 } } }, // F
-        6 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 20 } } }, // F# or Gb
-        7 => .{ .text = " ", .style = .{.reverse = false,  .bg = .{ .index = 165 } } }, // G
-        8 => .{ .text = " ", .style = .{.reverse = false,  .bg = .{ .index = 54 } } }, // G# or Ab
-        9 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 196 } } }, // A
-        10 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 130 } } }, // A# or Bb
-        11 => .{ .text = " ", .style = .{ .reverse = false, .bg = .{ .index = 208 } } }, // B
-        else => unreachable,
-    };
+fn maybeActivatedStyle(pitch: u7, activated: bool) context.Style {
+    if (!activated) {
+        return switch (pitch % 12) {
+            0 => .{ .reverse = true }, // C
+            1 => .{ .reverse = false }, // C# or Db
+            2 => .{ .reverse = true }, // D
+            3 => .{ .reverse = false }, // D# or Eb
+            4 => .{ .reverse = true }, // E
+            5 => .{ .reverse = true }, // F
+            6 => .{ .reverse = false }, // F# or Gb
+            7 => .{ .reverse = true }, // G
+            8 => .{ .reverse = false }, // G# or Ab
+            9 => .{ .reverse = true }, // A
+            10 => .{ .reverse = false }, // A# or Bb
+            11 => .{ .reverse = true }, // B
+            else => unreachable,
+        };
+    } else {
+        return switch (pitch % 12) {
+            0 => .{ .reverse = false, .bg = .{ .index = 226 } }, // C
+            1 => .{ .reverse = false, .bg = .{ .index = 22 } }, // C# or Db
+            2 => .{ .reverse = false, .bg = .{ .index = 76 } }, // D
+            3 => .{ .reverse = false, .bg = .{ .index = 30 } }, // D# or Eb
+            4 => .{ .reverse = false, .bg = .{ .index = 51 } }, // E
+            5 => .{ .reverse = false, .bg = .{ .index = 27 } }, // F
+            6 => .{ .reverse = false, .bg = .{ .index = 20 } }, // F# or Gb
+            7 => .{ .reverse = false, .bg = .{ .index = 165 } }, // G
+            8 => .{ .reverse = false, .bg = .{ .index = 54 } }, // G# or Ab
+            9 => .{ .reverse = false, .bg = .{ .index = 196 } }, // A
+            10 => .{ .reverse = false, .bg = .{ .index = 130 } }, // A# or Bb
+            11 => .{ .reverse = false, .bg = .{ .index = 208 } }, // B
+            else => unreachable,
+        };
+    }
 }
