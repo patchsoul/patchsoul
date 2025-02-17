@@ -1,3 +1,5 @@
+// TODO: rename this to `lib/mask` and turn this into a `Mask128` export.
+
 const std = @import("std");
 
 const OneTwoEight = @This();
