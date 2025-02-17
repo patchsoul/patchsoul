@@ -15,6 +15,13 @@ pub fn cleanUp() void {
     stderr_data.reset();
 }
 
+pub fn to(primitive: type, value: anytype) ?primitive {
+    if (value < std.math.minInt(primitive) or value > std.math.maxInt(primitive)) {
+        return null;
+    }
+    return @intCast(value);
+}
+
 pub fn isLittleEndian() bool {
     return builtin.target.cpu.arch.endian() == .little;
 }

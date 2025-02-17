@@ -4,7 +4,7 @@ const zsynth = @import("ziggysynth");
 
 const std = @import("std");
 
-const ActivePitches = lib.OneTwoEight;
+const ActivePitches = lib.mask.Mask128;
 const Harmony = @This();
 const Self = @This();
 

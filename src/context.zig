@@ -2,6 +2,8 @@ const Harmony = @import("Harmony.zig");
 const vaxis = @import("vaxis");
 
 pub const ChildOptions = vaxis.Window.ChildOptions;
+pub const Segment = vaxis.Segment;
+pub const Style = vaxis.Style;
 
 pub const Windowed = struct {
     window: vaxis.Window,
