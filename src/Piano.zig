@@ -23,20 +23,21 @@ pub fn update(self: *Self, midi: MidiEvent) !void {
 }
 
 pub fn draw(self: *Self, ctx: *context.Windowed) !void {
-    // TODO: don't do a full redraw every time
-    for (0..ctx.window.width) |i| {
-        const pitch: u7 = common.to(u7, i + self.pitch_offset) orelse break;
-        _ = try ctx.window.printSegment(upperKeySegment(pitch), .{
-            .col_offset = @intCast(i),
-            .row_offset = 0,
-        });
-    }
-    for (0..ctx.window.width) |i| {
-        const pitch: u7 = common.to(u7, i + self.pitch_offset) orelse break;
-        _ = try ctx.window.printSegment(lowerKeySegment(pitch), .{
-            .col_offset = @intCast(i),
-            .row_offset = 1,
-        });
+    if (ctx.needs_full_redraw) {
+        for (0..ctx.window.width) |i| {
+            const pitch: u7 = common.to(u7, i + self.pitch_offset) orelse break;
+            _ = try ctx.window.printSegment(upperKeySegment(pitch), .{
+                .col_offset = @intCast(i),
+                .row_offset = 0,
+            });
+        }
+        for (0..ctx.window.width) |i| {
+            const pitch: u7 = common.to(u7, i + self.pitch_offset) orelse break;
+            _ = try ctx.window.printSegment(lowerKeySegment(pitch), .{
+                .col_offset = @intCast(i),
+                .row_offset = 1,
+            });
+        }
     }
     // TODO: when a mouse clicks a note, play the note on the synthesizer
     // TODO
