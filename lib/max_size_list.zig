@@ -32,6 +32,8 @@ pub fn MaxSizeList(N: comptime_int, comptime T: type) type {
             }
         }
 
+        // TODO: can we make `self` an `anytype` here and deduce the const'ness of it
+        // for the return type `[]T` vs. `[]constT`?
         pub inline fn items(self: *Self) []T {
             return self.array[0..self.count()];
         }
@@ -52,8 +54,22 @@ pub fn MaxSizeList(N: comptime_int, comptime T: type) type {
                 null;
         }
 
-        // Returns a value, make sure to `deinit()` it if necessary.
-        pub inline fn remove(self: *Self, index: usize) ?T {
+        /// Returns true if the value was present in the list.
+        pub fn removeValue(self: *Self, value: T) bool {
+            for (0..self.count()) |index| {
+                if (common.equal(self.inBounds(index), value)) {
+                    var to_deinit = self.removeIndex(index) orelse unreachable;
+                    if (std.meta.hasMethod(T, "deinit")) {
+                        to_deinit.deinit();
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// Returns a value, make sure to `deinit()` it if necessary.
+        pub fn removeIndex(self: *Self, index: usize) ?T {
             if (index >= self.count()) {
                 return null;
             }

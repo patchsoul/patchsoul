@@ -166,14 +166,21 @@ pub fn printSliceLine(writer: anytype, slice: anytype) !void {
     try writer.print("\n", .{});
 }
 
+pub fn equal(a: anytype, b: @TypeOf(a)) bool {
+    const A = @TypeOf(a);
+    if (std.meta.hasMethod(A, "equals")) {
+        return a.equals(b);
+    }
+    return switch (@typeInfo(A)) {
+        .Struct => structEqual(a, b),
+        .Union => taggedEqual(a, b),
+        else => a == b,
+    };
+}
+
 pub fn structEqual(a: anytype, b: @TypeOf(a)) bool {
     inline for (@typeInfo(@TypeOf(a)).Struct.fields) |field_info| {
-        const SubField = @TypeOf(@field(a, field_info.name));
-        const equal = if (std.meta.hasMethod(SubField, "equals"))
-            @field(a, field_info.name).equals(@field(b, field_info.name))
-        else
-            @field(a, field_info.name) == @field(b, field_info.name);
-        if (!equal) {
+        if (!equal(@field(a, field_info.name), @field(b, field_info.name))) {
             return false;
         }
     }
@@ -188,12 +195,7 @@ pub fn taggedEqual(a: anytype, b: @TypeOf(a)) bool {
     const Tag = Union.tag_type.?;
     inline for (Union.fields) |field_info| {
         if (@field(Tag, field_info.name) == tag_a) {
-            const SubField = @TypeOf(@field(a, field_info.name));
-            if (std.meta.hasMethod(SubField, "equals")) {
-                return @field(a, field_info.name).equals(@field(b, field_info.name));
-            } else {
-                return @field(a, field_info.name) == @field(b, field_info.name);
-            }
+            return equal(@field(a, field_info.name), @field(b, field_info.name));
         }
     }
     unreachable;
