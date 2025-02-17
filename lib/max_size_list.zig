@@ -133,11 +133,11 @@ pub fn MaxSizeList(N: comptime_int, comptime T: type) type {
             self.internal_count = 0;
         }
 
-        pub inline fn expectEquals(self: Self, other: Self) !void {
+        pub inline fn expectEquals(self: *Self, other: *Self) !void {
             try self.expectEqualsSlice(other.items());
         }
 
-        pub inline fn expectEqualsSlice(self: Self, other: []const T) !void {
+        pub inline fn expectEqualsSlice(self: *Self, other: []const T) !void {
             try common.expectEqualSlices(other, self.items());
         }
 

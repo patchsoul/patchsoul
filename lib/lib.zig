@@ -5,6 +5,7 @@ pub const midi = @import("midi.zig");
 pub const mutex = @import("mutex.zig");
 pub const owned_list = @import("owned_list.zig");
 pub const max_size_list = @import("max_size_list.zig");
+pub const set_list = @import("set_list.zig");
 pub const Shtick = @import("shtick.zig").Shtick;
 pub const testing = @import("testing.zig");
 pub const time = @import("time.zig");
