@@ -79,18 +79,21 @@ fn upperKeySegment(pitch: u7, activated: bool) context.Segment {
 }
 
 fn lowerKeySegment(pitch: u7, activated: bool) context.Segment {
+    // light shade: ░
+    // medium: ▒
+    // dark: ▓
     return switch (pitch % 12) {
         0 => .{ .text = "C", .style = maybeActivatedStyle(pitch, activated) },
-        1 => .{ .text = "░", .style = .{ .reverse = false } }, // C# or Db
+        1 => .{ .text = "▓", .style = .{ .reverse = false } }, // C# or Db
         2 => .{ .text = "D", .style = maybeActivatedStyle(pitch, activated) },
-        3 => .{ .text = "░", .style = .{ .reverse = false } }, // D# or Eb
+        3 => .{ .text = "▓", .style = .{ .reverse = false } }, // D# or Eb
         4 => .{ .text = "E", .style = maybeActivatedStyle(pitch, activated) },
         5 => .{ .text = "F", .style = maybeActivatedStyle(pitch, activated) },
-        6 => .{ .text = "░", .style = .{ .reverse = false } }, // F# or Gb
+        6 => .{ .text = "▓", .style = .{ .reverse = false } }, // F# or Gb
         7 => .{ .text = "G", .style = maybeActivatedStyle(pitch, activated) },
-        8 => .{ .text = "░", .style = .{ .reverse = false } }, // G# or Ab
+        8 => .{ .text = "▓", .style = .{ .reverse = false } }, // G# or Ab
         9 => .{ .text = "A", .style = maybeActivatedStyle(pitch, activated) },
-        10 => .{ .text = "░", .style = .{ .reverse = false } }, // A# or Bb
+        10 => .{ .text = "▓", .style = .{ .reverse = false } }, // A# or Bb
         11 => .{ .text = "B", .style = maybeActivatedStyle(pitch, activated) },
         else => unreachable,
     };
@@ -123,7 +126,7 @@ fn maybeActivatedStyle(pitch: u7, activated: bool) context.Style {
             5 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 27 } }, // F
             6 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 20 } }, // F# or Gb
             7 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 165 } }, // G
-            8 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 54 } }, // G# or Ab
+            8 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 53 } }, // G# or Ab
             9 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 196 } }, // A
             10 => .{ .reverse = false, .fg = .{ .index = 231 }, .bg = .{ .index = 130 } }, // A# or Bb
             11 => .{ .reverse = false, .fg = .{ .index = 16 }, .bg = .{ .index = 208 } }, // B
