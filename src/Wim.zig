@@ -150,9 +150,11 @@ pub fn update(self: *Self, ctx: *context.Windowless, event: Event) !void {
             },
             .note_on => |note_on| {
                 ctx.harmony.noteOn(note_on.pitch, note_on.velocity);
+                try self.piano.update(.{ .note_on = note_on });
             },
             .note_off => |note_off| {
                 ctx.harmony.noteOff(note_off.pitch, note_off.velocity);
+                try self.piano.update(.{ .note_off = note_off });
             },
         },
         .winsize => |ws| {
@@ -175,7 +177,7 @@ pub fn draw(self: *Self, ctx: *context.Windowed) void {
 
     try ctx.drawChild(&self.piano, .{
         .x_off = 0,
-        .y_off = ctx.window.height - 2,
+        .y_off = ctx.window.height - 3,
         .width = .{ .limit = ctx.window.width },
         .height = .{ .limit = 2 },
     });
@@ -210,8 +212,8 @@ fn drawPortConnected(self: *Self, ctx: *context.Windowed) !void {
     const length = self.port_update_message.capacity();
 
     const child = ctx.window.child(.{
-        .x_off = ctx.window.width - length,
-        .y_off = ctx.window.height - 5,
+        .x_off = 0,
+        .y_off = ctx.window.height - 1,
         .width = .{ .limit = length },
         .height = .{ .limit = 1 },
     });
@@ -228,5 +230,7 @@ inline fn writeLog(self: *Self, comptime format: []const u8, data: anytype) void
         std.fmt.format(file.writer(), format, data) catch {};
     }
 }
+
+// TODO: show notes like this: https://www.compart.com/en/unicode/block/U+2580
 
 const Self = @This();
