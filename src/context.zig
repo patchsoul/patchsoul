@@ -1,6 +1,7 @@
 const Harmony = @import("Harmony.zig");
 const vaxis = @import("vaxis");
 
+pub const Event = @import("event.zig").Event;
 pub const ChildOptions = vaxis.Window.ChildOptions;
 pub const Segment = vaxis.Segment;
 pub const Style = vaxis.Style;
@@ -8,6 +9,7 @@ pub const Style = vaxis.Style;
 pub const Windowed = struct {
     window: vaxis.Window,
     harmony: *Harmony,
+    // TODO: add `loop: *vaxis.Loop(Event)` for posting events
     /// Mouse event to be handled during draw cycle.
     mouse: ?vaxis.Mouse = null,
     needs_full_redraw: bool = false,
@@ -26,6 +28,7 @@ pub const Windowed = struct {
 
 pub const Windowless = struct {
     harmony: *Harmony,
+    // TODO: add `loop: *vaxis.Loop(Event)` for posting events
     /// Mouse event to be handled during draw cycle.
     mouse: ?vaxis.Mouse = null,
     needs_full_redraw: bool = false,

@@ -1,8 +1,8 @@
 const context = @import("context.zig");
 const Harmony = @import("Harmony.zig");
+const TrackEditor = @import("TrackEditor.zig");
 const Event = @import("event.zig").Event;
 const lib = @import("lib");
-const Piano = @import("Piano.zig");
 const RtAudio = @import("rtaudio").RtAudio;
 const RtMidi = @import("rtmidi").RtMidi;
 const vaxis = @import("vaxis");
@@ -28,7 +28,7 @@ midi_connected: bool = false,
 last_port_count: usize = 0,
 port_update_message: lib.Shtick,
 log_file: ?std.fs.File,
-piano: Piano,
+track_editor: TrackEditor,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     // TODO: make this a command-line option, defaulting to SoundFont.sf2 if nothing else is passed in.
@@ -42,11 +42,11 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         },
         .rtaudio = RtAudio.init(),
         .rtmidi = RtMidi.init() catch null,
-        .piano = Piano.init(),
         .port_update_message = lib.Shtick.withCapacity(100) catch {
             @panic("should have enough capacity");
         },
         .log_file = std.fs.cwd().createFile("wim.out", .{}) catch null,
+        .track_editor = TrackEditor.init(),
     };
 }
 
@@ -61,8 +61,8 @@ pub fn deinit(self: *Self) void {
         file.close();
         self.log_file = null;
     }
-    self.piano.deinit();
     self.harmony.deinit();
+    self.track_editor.deinit();
 }
 
 fn midiCallback(loop: *vaxis.Loop(Event), event: RtMidi.Event) void {
@@ -127,7 +127,7 @@ pub fn update(self: *Self, ctx: *context.Windowless, event: Event) !void {
             ctx.needs_full_redraw = true;
         },
         .key_press => |key| {
-            if (key.matches('c', .{ .ctrl = true }))
+            if (key.matches('q', .{ .ctrl = true }))
                 self.should_quit = true;
         },
         .mouse => |mouse| ctx.mouse = mouse,
@@ -150,11 +150,11 @@ pub fn update(self: *Self, ctx: *context.Windowless, event: Event) !void {
             },
             .note_on => |note_on| {
                 ctx.harmony.noteOn(note_on.pitch, note_on.velocity);
-                self.piano.update(.{ .note_on = note_on });
+                try self.track_editor.update(ctx, event);
             },
             .note_off => |note_off| {
                 ctx.harmony.noteOff(note_off.pitch, note_off.velocity);
-                self.piano.update(.{ .note_off = note_off });
+                try self.track_editor.update(ctx, event);
             },
         },
         .winsize => |ws| {
@@ -175,11 +175,11 @@ pub fn draw(self: *Self, ctx: *context.Windowed) void {
     }
     try self.drawPortConnected(ctx);
 
-    try ctx.drawChild(&self.piano, .{
+    try ctx.drawChild(&self.track_editor, .{
         .x_off = 0,
-        .y_off = ctx.window.height - 3,
-        .width = .{ .limit = ctx.window.width },
-        .height = .{ .limit = 2 },
+        .y_off = 0,
+        .width = .{ .limit = @min(128, ctx.window.width) },
+        .height = .{ .limit = ctx.window.height - 1 },
     });
 }
 

@@ -54,6 +54,7 @@ pub fn draw(self: *Self, ctx: *context.Windowed) !void {
     try self.maybeActivate(ctx, true);
     try self.maybeActivate(ctx, false);
     // TODO: when a mouse clicks a note, play the note on the synthesizer
+    // (feedback loop: push a MidiEvent to the loop)
     // TODO
 }
 
