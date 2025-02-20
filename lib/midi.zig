@@ -330,7 +330,7 @@ test "midi.Track erase works for degenerate case" {
         track.erase(.{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } }),
     );
 
-    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEquals(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 6789, .event = .ports_updated },
     });
@@ -349,7 +349,7 @@ test "midi.Track erase works for non-degenerate case" {
         track.erase(.{ .ticks = 789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } }),
     );
 
-    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEquals(&[_]TrackEvent{
         .{ .ticks = 123, .event = .ports_updated },
         .{ .ticks = 456, .event = .ports_updated },
         .{ .ticks = 789, .event = .ports_updated },
@@ -360,7 +360,7 @@ test "midi.Track erase works for non-degenerate case" {
         track.erase(.{ .ticks = 123, .event = .ports_updated }),
     );
 
-    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEquals(&[_]TrackEvent{
         .{ .ticks = 456, .event = .ports_updated },
         .{ .ticks = 789, .event = .ports_updated },
     });
@@ -376,7 +376,7 @@ test "midi.Track insert works for degenerate case" {
 
     try track.insert(.{ .ticks = 6789, .event = .{ .note_off = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
 
-    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEquals(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 6789, .event = .ports_updated },
         .{ .ticks = 6789, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
@@ -385,7 +385,7 @@ test "midi.Track insert works for degenerate case" {
 
     try track.insert(.{ .ticks = 1234, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
 
-    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEquals(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 1234, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
         .{ .ticks = 6789, .event = .ports_updated },
@@ -403,7 +403,7 @@ test "midi.Track insert works for non-degenerate case" {
 
     try track.insert(.{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } });
 
-    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEquals(&[_]TrackEvent{
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
         .{ .ticks = 6789, .event = .ports_updated },
@@ -413,7 +413,7 @@ test "midi.Track insert works for non-degenerate case" {
     try track.insert(.{ .ticks = 1000, .event = .{ .note_on = .{ .port = 9, .pitch = 5, .velocity = 4 } } });
     try track.insert(.{ .ticks = 7000, .event = .{ .note_off = .{ .port = 9, .pitch = 5, .velocity = 4 } } });
 
-    try track.track_events.expectEqualsSlice(&[_]TrackEvent{
+    try track.track_events.expectEquals(&[_]TrackEvent{
         .{ .ticks = 1000, .event = .{ .note_on = .{ .port = 9, .pitch = 5, .velocity = 4 } } },
         .{ .ticks = 1234, .event = .ports_updated },
         .{ .ticks = 5555, .event = .{ .note_on = .{ .port = 0, .pitch = 1, .velocity = 2 } } },
@@ -434,7 +434,7 @@ test "midi.Track binary search works for fully degenerate case" {
     try std.testing.expectEqual(0, track.findNextIndex(123));
     try std.testing.expectEqual(null, track.findNextIndex(124));
 
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 123, .event = .ports_updated },
             .{ .ticks = 123, .event = .ports_updated },
@@ -442,7 +442,7 @@ test "midi.Track binary search works for fully degenerate case" {
         },
         track.events(.all),
     );
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 123, .event = .ports_updated },
             .{ .ticks = 123, .event = .ports_updated },
@@ -450,7 +450,7 @@ test "midi.Track binary search works for fully degenerate case" {
         },
         track.events(.{ .at_ticks = 123 }),
     );
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 123, .event = .ports_updated },
             .{ .ticks = 123, .event = .ports_updated },
@@ -458,11 +458,11 @@ test "midi.Track binary search works for fully degenerate case" {
         },
         track.events(.{ .tick_range = .{ .start = 123, .end = 456 } }),
     );
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{},
         track.events(.{ .at_ticks = 124 }),
     );
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{},
         track.events(.{ .tick_range = .{ .start = 120, .end = 123 } }),
     );
@@ -490,7 +490,7 @@ test "midi.Track binary search works for degenerate case" {
 
     try std.testing.expectEqual(null, track.findNextIndex(790));
 
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 123, .event = .ports_updated },
             .{ .ticks = 123, .event = .ports_updated },
@@ -501,21 +501,21 @@ test "midi.Track binary search works for degenerate case" {
         },
         track.events(.all),
     );
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 123, .event = .ports_updated },
             .{ .ticks = 123, .event = .ports_updated },
         },
         track.events(.{ .at_ticks = 123 }),
     );
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 456, .event = .ports_updated },
             .{ .ticks = 456, .event = .ports_updated },
         },
         track.events(.{ .at_ticks = 456 }),
     );
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 789, .event = .ports_updated },
             .{ .ticks = 789, .event = .ports_updated },
@@ -542,14 +542,14 @@ test "midi.Track binary search works for odd-count non-degenerate case" {
     try std.testing.expectEqual(2, track.findNextIndex(789));
 
     try std.testing.expectEqual(null, track.findNextIndex(790));
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 456, .event = .ports_updated },
             .{ .ticks = 789, .event = .ports_updated },
         },
         track.events(.{ .tick_range = .{ .start = 456, .end = 790 } }),
     );
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 123, .event = .ports_updated },
         },
@@ -580,7 +580,7 @@ test "midi.Track binary search works for even-count non-degenerate case" {
 
     try std.testing.expectEqual(null, track.findNextIndex(79));
 
-    try common.expectEqualSlices(
+    try common.expectEqualIndexables(
         &[_]TrackEvent{
             .{ .ticks = 12, .event = .ports_updated },
             .{ .ticks = 34, .event = .ports_updated },

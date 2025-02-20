@@ -81,7 +81,7 @@ test "can get lines printed to stdout" {
 
     var lines = common.stdout.pullLines();
     defer lines.deinit();
-    try lines.expectEqualsSlice(&[_]Shtick{
+    try lines.expectEquals(&[_]Shtick{
         Shtick.unallocated("oh yes, oh no"),
         Shtick.unallocated("2 in"),
         Shtick.unallocated("one print"),
@@ -98,7 +98,7 @@ test "can get lines printed to stderr" {
 
     var lines = common.stderr.pullLines();
     defer lines.deinit();
-    try lines.expectEqualsSlice(&[_]Shtick{
+    try lines.expectEquals(&[_]Shtick{
         Shtick.unallocated("one"),
         Shtick.unallocated("two"),
         Shtick.unallocated("three"),
@@ -115,13 +115,13 @@ test "can get lines printed to stdout and stderr" {
     try common.stderr.print("or\n", .{});
 
     var lines = common.stderr.pullLines();
-    try lines.expectEqualsSlice(&[_]Shtick{
+    try lines.expectEquals(&[_]Shtick{
         Shtick.unallocated("ERRor"),
     });
     lines.deinit();
 
     lines = common.stdout.pullLines();
-    try lines.expectEqualsSlice(&[_]Shtick{
+    try lines.expectEquals(&[_]Shtick{
         Shtick.unallocated("outWARD"),
     });
     lines.deinit();

@@ -126,46 +126,6 @@ pub fn printIndex(writer: anytype, i: usize, tab: u16) !void {
     }
 }
 
-pub fn printSlice(writer: anytype, slice: anytype) !void {
-    try writer.print("[", .{});
-    for (slice) |item| {
-        if (std.meta.hasMethod(@TypeOf(item), "print")) {
-            try item.print(writer);
-            try writer.print(", ", .{});
-        } else {
-            try writer.print("{}, ", .{item});
-        }
-    }
-    try writer.print("]", .{});
-}
-
-// Doesn't include a final `\n` here.
-pub fn printSliceTabbed(writer: anytype, slice: anytype, tab: u16) !void {
-    for (0..tab) |_| {
-        try writer.print(" ", .{});
-    }
-    try writer.print("{{\n", .{});
-    for (0..slice.len) |i| {
-        const item = slice[i];
-        try printIndex(writer, i, tab);
-        if (std.meta.hasMethod(@TypeOf(item), "printTabbed")) {
-            try item.printTabbed(writer, tab + 4);
-            try writer.print(",\n", .{});
-        } else if (std.meta.hasMethod(@TypeOf(item), "print")) {
-            try item.print(writer);
-            try writer.print(",\n", .{});
-        } else {
-            try writer.print("{},\n", .{item});
-        }
-    }
-    try writer.print("}}", .{});
-}
-
-pub fn printSliceLine(writer: anytype, slice: anytype) !void {
-    try printSliceTabbed(writer, slice, 0);
-    try writer.print("\n", .{});
-}
-
 // Doesn't include a final `\n` here.
 pub fn printIndexable(writer: anytype, indexable: anytype) !void {
     try writer.print("[", .{});
@@ -260,33 +220,6 @@ pub fn taggedEqual(a: anytype, b: @TypeOf(a)) bool {
     unreachable;
 }
 
-// TODO: delete and migrate to `expectEqualIndexables`
-pub fn expectEqualSlices(other: anytype, self: anytype) !void {
-    errdefer {
-        debug_stderr.print("expected:\n", .{}) catch {};
-        printSliceLine(debug_stderr, other) catch {};
-
-        debug_stderr.print("got:\n", .{}) catch {};
-        printSliceLine(debug_stderr, self) catch {};
-    }
-    for (0..@min(self.len, other.len)) |index| {
-        const self_item = self[index];
-        const other_item = other[index];
-        (if (std.meta.hasMethod(@TypeOf(self_item), "expectEquals"))
-            self_item.expectEquals(other_item)
-        else
-            std.testing.expectEqual(other_item, self_item)) catch |e| {
-            debug_stderr.print("\nnot equal at index {d}\n\n", .{index}) catch {};
-            return e;
-        };
-    }
-    // We error out "late" for equal lengths in case it's interesting
-    // what's different on the inside (can help with debugging).
-    try std.testing.expectEqual(other.len, self.len);
-}
-
-const IndexableError = error{not_equal};
-
 pub fn expectEqualIndexables(b: anytype, a: anytype) !void {
     errdefer {
         debug_stderr.print("expected:\n", .{}) catch {};
@@ -308,7 +241,7 @@ pub fn expectEqualIndexables(b: anytype, a: anytype) !void {
             continue;
         }
         debug_stderr.print("\nnot equal at index {d}\n\n", .{index}) catch {};
-        return IndexableError.not_equal;
+        return error.TestExpectedEqual;
     }
     // We error out "late" for equal lengths in case it's interesting
     // what's different on the inside (can help with debugging).
@@ -390,15 +323,15 @@ test "when works with error unions" {
     try std.testing.expectEqual(true, when(my_i32, Test.big));
 }
 
-test "expectEqualSlices fails when different sizes" {
-    try std.testing.expectError(error.TestExpectedEqual, expectEqualSlices(
+test "expectEqualIndexables fails when different sizes" {
+    try std.testing.expectError(error.TestExpectedEqual, expectEqualIndexables(
         &[_]u8{ 0, 1, 2, 3 },
         &[_]u8{ 0, 1, 2, 3, 4 },
     ));
 }
 
 test "expectEqualSlices fails when different" {
-    try std.testing.expectError(error.TestExpectedEqual, expectEqualSlices(
+    try std.testing.expectError(error.TestExpectedEqual, expectEqualIndexables(
         &[_]u8{ 0, 1, 22, 3, 4 },
         &[_]u8{ 0, 1, 20, 3, 4 },
     ));

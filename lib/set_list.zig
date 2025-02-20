@@ -63,19 +63,19 @@ test "can remove values" {
         try std.testing.expect(set_list.add(@intCast(i)));
         try std.testing.expect(set_list.add(@intCast(127 - i)));
     }
-    try set_list.list128.expectEqualsSlice(&[_]u8{ 0, 127, 1, 126, 2, 125, 3, 124, 4, 123 });
+    try set_list.list128.expectEquals(&[_]u8{ 0, 127, 1, 126, 2, 125, 3, 124, 4, 123 });
     try std.testing.expectEqual(10, set_list.count());
 
     try std.testing.expect(set_list.remove(3));
-    try set_list.list128.expectEqualsSlice(&[_]u8{ 0, 127, 1, 126, 2, 125, 124, 4, 123 });
+    try set_list.list128.expectEquals(&[_]u8{ 0, 127, 1, 126, 2, 125, 124, 4, 123 });
     try std.testing.expectEqual(9, set_list.count());
 
     try std.testing.expect(set_list.remove(0));
-    try set_list.list128.expectEqualsSlice(&[_]u8{ 127, 1, 126, 2, 125, 124, 4, 123 });
+    try set_list.list128.expectEquals(&[_]u8{ 127, 1, 126, 2, 125, 124, 4, 123 });
     try std.testing.expectEqual(8, set_list.count());
 
     try std.testing.expect(set_list.remove(123));
-    try set_list.list128.expectEqualsSlice(&[_]u8{ 127, 1, 126, 2, 125, 124, 4 });
+    try set_list.list128.expectEquals(&[_]u8{ 127, 1, 126, 2, 125, 124, 4 });
     try std.testing.expectEqual(7, set_list.count());
 }
 
@@ -103,19 +103,19 @@ test "add updates mask and list" {
 
     try std.testing.expectEqual(0, set_list.mask128.sixty_fours[0]);
     try std.testing.expectEqual(SetList128.one << (123 - 64), set_list.mask128.sixty_fours[1]);
-    try set_list.list128.expectEqualsSlice(&[_]u8{123});
+    try set_list.list128.expectEquals(&[_]u8{123});
     try std.testing.expectEqual(1, set_list.count());
 
     try std.testing.expect(set_list.add(62));
 
     try std.testing.expectEqual(SetList128.one << (62), set_list.mask128.sixty_fours[0]);
     try std.testing.expectEqual(SetList128.one << (123 - 64), set_list.mask128.sixty_fours[1]);
-    try set_list.list128.expectEqualsSlice(&[_]u8{ 123, 62 });
+    try set_list.list128.expectEquals(&[_]u8{ 123, 62 });
     try std.testing.expectEqual(2, set_list.count());
 
     try std.testing.expect(set_list.add(62) == false);
-    try set_list.list128.expectEqualsSlice(&[_]u8{ 123, 62 });
+    try set_list.list128.expectEquals(&[_]u8{ 123, 62 });
 
     try std.testing.expect(set_list.add(123) == false);
-    try set_list.list128.expectEqualsSlice(&[_]u8{ 123, 62 });
+    try set_list.list128.expectEquals(&[_]u8{ 123, 62 });
 }

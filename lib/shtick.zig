@@ -390,24 +390,13 @@ pub const Shtick = extern struct {
         return std.mem.eql(u8, self.slice(), if (other_is_shtick) other.slice() else other);
     }
 
-    pub fn expectEquals(a: Self, b: Self) !void {
+    pub fn expectEquals(a: Self, b: anytype) !void {
+        const b_is_shtick = @TypeOf(b) == Self;
         const equal = a.equals(b);
         if (!equal) {
-            std.debug.print("expected {s}, got {s}\n", .{ b.slice(), a.slice() });
+            std.debug.print("expected {s}, got {s}\n", .{ if (b_is_shtick) b.slice() else b, a.slice() });
         }
-        try std.testing.expect(equal);
-    }
-
-    pub fn expectNotEquals(a: Self, b: Self) !void {
-        const equal = a.equals(b);
-        if (equal) {
-            std.debug.print("expected {s} to NOT equal {s}\n", .{ a.slice(), b.slice() });
-        }
-        try std.testing.expect(!equal);
-    }
-
-    pub fn expectEqualsSlice(self: Self, other_slice: []const u8) !void {
-        try std.testing.expectEqualStrings(other_slice, self.slice());
+        try std.testing.expectEqual(true, equal);
     }
 
     pub inline fn isUncapital(char: u8) bool {
@@ -455,13 +444,22 @@ test "unallocated works" {
     try std.testing.expectEqualStrings("this is ok man", Shtick.unallocated("this is ok man").slice());
 }
 
+test "expectEquals works for allocated" {
+    var shtick = try Shtick.init("this is big, ok, so not unallocated");
+    defer shtick.deinit();
+
+    try shtick.expectEquals("this is big, ok, so not unallocated");
+    try std.testing.expectError(error.TestExpectedEqual, shtick.expectEquals("this is big, ok, so not unallocateD"));
+    try std.testing.expectError(error.TestExpectedEqual, shtick.expectEquals("this is big, ok, so not unallocated!"));
+}
+
 test "slice works for large shticks" {
     var shtick = try Shtick.init("Thumb thunk rink?");
     defer shtick.deinit();
 
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(false, shtick.isUnallocated());
-    try common.expectEqualSlices(shtick.slice(), "Thumb thunk rink?");
+    try shtick.expectEquals("Thumb thunk rink?");
 }
 
 test "slice works for short shticks" {
@@ -470,7 +468,7 @@ test "slice works for short shticks" {
 
     try std.testing.expectEqual(false, shtick.isAllocated());
     try std.testing.expectEqual(true, shtick.isUnallocated());
-    try common.expectEqualSlices(shtick.slice(), "Thumb 123");
+    try shtick.expectEquals("Thumb 123");
 }
 
 test "unallocated copyFrom long allocated works" {
@@ -481,7 +479,7 @@ test "unallocated copyFrom long allocated works" {
     defer source.deinit();
     const source_str = "this is pretty big well maybe not but bigger than 14 and less than 100";
     try source.copyFromSlice(source_str);
-    try source.expectEqualsSlice(source_str);
+    try source.expectEquals(source_str);
     try std.testing.expectEqual(true, source.isAllocated());
     try std.testing.expectEqual(100, source.capacity());
     try std.testing.expectEqual(70, source.count());
@@ -501,7 +499,7 @@ test "unallocated copyFrom short allocated works" {
     defer source.deinit();
     const source_str = "abc";
     try source.copyFromSlice(source_str);
-    try source.expectEqualsSlice(source_str);
+    try source.expectEquals(source_str);
     try std.testing.expectEqual(true, source.isAllocated());
     try std.testing.expectEqual(125, source.capacity());
     try std.testing.expectEqual(3, source.count());
@@ -553,7 +551,7 @@ test "unallocated copyFromSlice shorter unallocated" {
     try std.testing.expectEqual(false, shtick.isAllocated());
     try std.testing.expectEqual(14, shtick.capacity());
     try std.testing.expectEqual(3, shtick.count());
-    try shtick.expectEqualsSlice("abc");
+    try shtick.expectEquals("abc");
 }
 
 test "unallocated copyFromSlice longer unallocated" {
@@ -565,7 +563,7 @@ test "unallocated copyFromSlice longer unallocated" {
     try std.testing.expectEqual(false, shtick.isAllocated());
     try std.testing.expectEqual(14, shtick.capacity());
     try std.testing.expectEqual(14, shtick.count());
-    try shtick.expectEqualsSlice(source_str);
+    try shtick.expectEquals(source_str);
 }
 
 test "unallocated copyFromSlice needs allocated size" {
@@ -578,7 +576,7 @@ test "unallocated copyFromSlice needs allocated size" {
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(15, shtick.capacity());
     try std.testing.expectEqual(15, shtick.count());
-    try shtick.expectEqualsSlice(source_str);
+    try shtick.expectEquals(source_str);
 }
 
 test "allocated copyFromSlice longer needing to increase capacity" {
@@ -594,7 +592,7 @@ test "allocated copyFromSlice longer needing to increase capacity" {
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(50, shtick.capacity());
     try std.testing.expectEqual(50, shtick.count());
-    try shtick.expectEqualsSlice(source_str);
+    try shtick.expectEquals(source_str);
 }
 
 test "allocated copyFromSlice longer without changing capacity" {
@@ -608,7 +606,7 @@ test "allocated copyFromSlice longer without changing capacity" {
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(100, shtick.capacity()); // doesn't change
     try std.testing.expectEqual(42, shtick.count());
-    try shtick.expectEqualsSlice(source_str);
+    try shtick.expectEquals(source_str);
 }
 
 test "allocated copyFromSlice shorter" {
@@ -623,7 +621,7 @@ test "allocated copyFromSlice shorter" {
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(100, shtick.capacity()); // doesn't change
     try std.testing.expectEqual(14, shtick.count());
-    try shtick.expectEqualsSlice(source_str);
+    try shtick.expectEquals(source_str);
 }
 
 test "unallocated addSlice still unallocated" {
@@ -634,7 +632,7 @@ test "unallocated addSlice still unallocated" {
     try std.testing.expectEqual(false, shtick.isAllocated());
     try std.testing.expectEqual(14, shtick.capacity());
     try std.testing.expectEqual(7, shtick.count());
-    try shtick.expectEqualsSlice("l123abc");
+    try shtick.expectEquals("l123abc");
 }
 
 test "unallocated addSlice to max unallocated" {
@@ -645,7 +643,7 @@ test "unallocated addSlice to max unallocated" {
     try std.testing.expectEqual(false, shtick.isAllocated());
     try std.testing.expectEqual(14, shtick.capacity());
     try std.testing.expectEqual(14, shtick.count());
-    try shtick.expectEqualsSlice("abcdefghijklmN");
+    try shtick.expectEquals("abcdefghijklmN");
 }
 
 test "unallocated addSlice needs to be allocation" {
@@ -657,7 +655,7 @@ test "unallocated addSlice needs to be allocation" {
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(15, shtick.capacity());
     try std.testing.expectEqual(15, shtick.count());
-    try shtick.expectEqualsSlice("Abcdefghijklmno");
+    try shtick.expectEquals("Abcdefghijklmno");
 }
 
 test "allocated addSlice needing to increase capacity" {
@@ -672,7 +670,7 @@ test "allocated addSlice needing to increase capacity" {
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(57, shtick.capacity());
     try std.testing.expectEqual(57, shtick.count());
-    try shtick.expectEqualsSlice("this is a great start but we'll need to increase capacity");
+    try shtick.expectEquals("this is a great start but we'll need to increase capacity");
 }
 
 test "allocated addSlice without changing capacity" {
@@ -685,7 +683,7 @@ test "allocated addSlice without changing capacity" {
     try std.testing.expectEqual(true, shtick.isAllocated());
     try std.testing.expectEqual(100, shtick.capacity()); // doesn't change
     try std.testing.expectEqual(58, shtick.count());
-    try shtick.expectEqualsSlice("this is a great start, too, and no capacity changes needed");
+    try shtick.expectEquals("this is a great start, too, and no capacity changes needed");
 }
 
 test "allocated setCapacity" {
@@ -699,28 +697,28 @@ test "allocated setCapacity" {
     // Decreasing capacity might not change the count.
     try shtick.setCapacity(36);
     try std.testing.expectEqual(true, shtick.isAllocated());
-    try shtick.expectEqualsSlice("abcdefghijklmnopqrstuvwxyz1234567890");
+    try shtick.expectEquals("abcdefghijklmnopqrstuvwxyz1234567890");
     try std.testing.expectEqual(36, shtick.capacity());
     try std.testing.expectEqual(36, shtick.count());
 
     // Decreasing capacity will change count if needed.
     try shtick.setCapacity(26);
     try std.testing.expectEqual(true, shtick.isAllocated());
-    try shtick.expectEqualsSlice("abcdefghijklmnopqrstuvwxyz");
+    try shtick.expectEquals("abcdefghijklmnopqrstuvwxyz");
     try std.testing.expectEqual(26, shtick.capacity());
     try std.testing.expectEqual(26, shtick.count());
 
     // Increasing capacity shouldn't change count.
     try shtick.setCapacity(30);
     try std.testing.expectEqual(true, shtick.isAllocated());
-    try shtick.expectEqualsSlice("abcdefghijklmnopqrstuvwxyz");
+    try shtick.expectEquals("abcdefghijklmnopqrstuvwxyz");
     try std.testing.expectEqual(30, shtick.capacity());
     try std.testing.expectEqual(26, shtick.count());
 
     // Decreasing to unallocated status.
     try shtick.setCapacity(14);
     try std.testing.expectEqual(false, shtick.isAllocated());
-    try shtick.expectEqualsSlice("abcdefghijklmn");
+    try shtick.expectEquals("abcdefghijklmn");
     try std.testing.expectEqual(14, shtick.capacity());
     try std.testing.expectEqual(14, shtick.count());
 }
@@ -735,7 +733,7 @@ test "unallocated setCapacity" {
     // Decreasing capacity will change count if needed.
     try shtick.setCapacity(10);
     try std.testing.expectEqual(false, shtick.isAllocated());
-    try shtick.expectEqualsSlice("abcdefghij");
+    try shtick.expectEquals("abcdefghij");
     try std.testing.expectEqual(14, shtick.capacity());
     // This behavior is not necessary but we do it anyway.
     try std.testing.expectEqual(10, shtick.count());
@@ -743,21 +741,21 @@ test "unallocated setCapacity" {
     // Increasing capacity shouldn't change count.
     try shtick.setCapacity(13);
     try std.testing.expectEqual(false, shtick.isAllocated());
-    try shtick.expectEqualsSlice("abcdefghij");
+    try shtick.expectEquals("abcdefghij");
     try std.testing.expectEqual(14, shtick.capacity());
     try std.testing.expectEqual(10, shtick.count());
 
     // Decreasing capacity might not change the count.
     try shtick.setCapacity(11);
     try std.testing.expectEqual(false, shtick.isAllocated());
-    try shtick.expectEqualsSlice("abcdefghij");
+    try shtick.expectEquals("abcdefghij");
     try std.testing.expectEqual(14, shtick.capacity());
     try std.testing.expectEqual(10, shtick.count());
 
     // Increasing capacity can allocate.
     try shtick.setCapacity(57);
     try std.testing.expectEqual(true, shtick.isAllocated());
-    try shtick.expectEqualsSlice("abcdefghij");
+    try shtick.expectEquals("abcdefghij");
     try std.testing.expectEqual(57, shtick.capacity());
     try std.testing.expectEqual(10, shtick.count());
 }
@@ -831,88 +829,88 @@ test "contains At.end for short shtick" {
 }
 
 test "non-allocked String.toPascalCase start_upper works" {
-    try (try Shtick.unallocated("_hi_you__a!@").toPascalCase(.start_upper)).expectEqualsSlice("HiYouA!@");
-    try (try Shtick.unallocated("hey_jamboree_").toPascalCase(.start_upper)).expectEqualsSlice("HeyJamboree");
-    try (try Shtick.unallocated("___ohNo").toPascalCase(.start_upper)).expectEqualsSlice("OhNo");
-    try (try Shtick.unallocated("!$eleven#:").toPascalCase(.start_upper)).expectEqualsSlice("!$eleven#:");
-    try (try Shtick.unallocated("a_b_c___d___e").toPascalCase(.start_upper)).expectEqualsSlice("ABCDE");
-    try (try Shtick.unallocated("_____").toPascalCase(.start_upper)).expectEqualsSlice("");
-    try (try Shtick.unallocated("AlreadyCased").toPascalCase(.start_upper)).expectEqualsSlice("AlreadyCased");
-    try (try Shtick.unallocated("almostCased").toPascalCase(.start_upper)).expectEqualsSlice("AlmostCased");
+    try (try Shtick.unallocated("_hi_you__a!@").toPascalCase(.start_upper)).expectEquals("HiYouA!@");
+    try (try Shtick.unallocated("hey_jamboree_").toPascalCase(.start_upper)).expectEquals("HeyJamboree");
+    try (try Shtick.unallocated("___ohNo").toPascalCase(.start_upper)).expectEquals("OhNo");
+    try (try Shtick.unallocated("!$eleven#:").toPascalCase(.start_upper)).expectEquals("!$eleven#:");
+    try (try Shtick.unallocated("a_b_c___d___e").toPascalCase(.start_upper)).expectEquals("ABCDE");
+    try (try Shtick.unallocated("_____").toPascalCase(.start_upper)).expectEquals("");
+    try (try Shtick.unallocated("AlreadyCased").toPascalCase(.start_upper)).expectEquals("AlreadyCased");
+    try (try Shtick.unallocated("almostCased").toPascalCase(.start_upper)).expectEquals("AlmostCased");
 }
 
 test "non-allocked String.toPascalCase start_lower works" {
-    try (try Shtick.unallocated("_hi_you__a!@").toPascalCase(.start_lower)).expectEqualsSlice("hiYouA!@");
-    try (try Shtick.unallocated("hey_jamboree_").toPascalCase(.start_lower)).expectEqualsSlice("heyJamboree");
-    try (try Shtick.unallocated("___ohNo").toPascalCase(.start_lower)).expectEqualsSlice("ohNo");
-    try (try Shtick.unallocated("!$eleven#:").toPascalCase(.start_lower)).expectEqualsSlice("!$eleven#:");
-    try (try Shtick.unallocated("a_b_c___d___e").toPascalCase(.start_lower)).expectEqualsSlice("aBCDE");
-    try (try Shtick.unallocated("_____").toPascalCase(.start_upper)).expectEqualsSlice("");
-    try (try Shtick.unallocated("alreadyCased").toPascalCase(.start_lower)).expectEqualsSlice("alreadyCased");
-    try (try Shtick.unallocated("AlmostCased").toPascalCase(.start_lower)).expectEqualsSlice("almostCased");
+    try (try Shtick.unallocated("_hi_you__a!@").toPascalCase(.start_lower)).expectEquals("hiYouA!@");
+    try (try Shtick.unallocated("hey_jamboree_").toPascalCase(.start_lower)).expectEquals("heyJamboree");
+    try (try Shtick.unallocated("___ohNo").toPascalCase(.start_lower)).expectEquals("ohNo");
+    try (try Shtick.unallocated("!$eleven#:").toPascalCase(.start_lower)).expectEquals("!$eleven#:");
+    try (try Shtick.unallocated("a_b_c___d___e").toPascalCase(.start_lower)).expectEquals("aBCDE");
+    try (try Shtick.unallocated("_____").toPascalCase(.start_upper)).expectEquals("");
+    try (try Shtick.unallocated("alreadyCased").toPascalCase(.start_lower)).expectEquals("alreadyCased");
+    try (try Shtick.unallocated("AlmostCased").toPascalCase(.start_lower)).expectEquals("almostCased");
 }
 
 test "non-allocked String.toPascalCase keep_starting_case works" {
-    try (try Shtick.unallocated("_hi_you__a!@").toPascalCase(.keep_starting_case)).expectEqualsSlice("HiYouA!@");
-    try (try Shtick.unallocated("hey_jamboree_").toPascalCase(.keep_starting_case)).expectEqualsSlice("heyJamboree");
-    try (try Shtick.unallocated("___ohNo").toPascalCase(.keep_starting_case)).expectEqualsSlice("OhNo");
-    try (try Shtick.unallocated("!$eleven#:").toPascalCase(.keep_starting_case)).expectEqualsSlice("!$eleven#:");
-    try (try Shtick.unallocated("a_b_c___d___e").toPascalCase(.keep_starting_case)).expectEqualsSlice("aBCDE");
-    try (try Shtick.unallocated("_____").toPascalCase(.keep_starting_case)).expectEqualsSlice("");
-    try (try Shtick.unallocated("alreadyCased").toPascalCase(.keep_starting_case)).expectEqualsSlice("alreadyCased");
-    try (try Shtick.unallocated("AlsoCased").toPascalCase(.keep_starting_case)).expectEqualsSlice("AlsoCased");
+    try (try Shtick.unallocated("_hi_you__a!@").toPascalCase(.keep_starting_case)).expectEquals("HiYouA!@");
+    try (try Shtick.unallocated("hey_jamboree_").toPascalCase(.keep_starting_case)).expectEquals("heyJamboree");
+    try (try Shtick.unallocated("___ohNo").toPascalCase(.keep_starting_case)).expectEquals("OhNo");
+    try (try Shtick.unallocated("!$eleven#:").toPascalCase(.keep_starting_case)).expectEquals("!$eleven#:");
+    try (try Shtick.unallocated("a_b_c___d___e").toPascalCase(.keep_starting_case)).expectEquals("aBCDE");
+    try (try Shtick.unallocated("_____").toPascalCase(.keep_starting_case)).expectEquals("");
+    try (try Shtick.unallocated("alreadyCased").toPascalCase(.keep_starting_case)).expectEquals("alreadyCased");
+    try (try Shtick.unallocated("AlsoCased").toPascalCase(.keep_starting_case)).expectEquals("AlsoCased");
 }
 
 test "non-allocked String.toSnakeCase start_lower works" {
-    try (try Shtick.unallocated("HiYouA!@").toSnakeCase(.start_lower)).expectEqualsSlice("hi_you_a!@");
-    try (try Shtick.unallocated("HeyJamboree").toSnakeCase(.start_lower)).expectEqualsSlice("hey_jamboree");
-    try (try Shtick.unallocated("OhNo").toSnakeCase(.start_lower)).expectEqualsSlice("oh_no");
-    try (try Shtick.unallocated("!$eleven#:").toSnakeCase(.start_lower)).expectEqualsSlice("!$eleven#:");
-    try (try Shtick.unallocated("aBCDE").toSnakeCase(.start_lower)).expectEqualsSlice("a_b_c_d_e");
-    try (try Shtick.unallocated("_____").toSnakeCase(.start_lower)).expectEqualsSlice("");
-    try (try Shtick.unallocated("lower_cased").toSnakeCase(.start_lower)).expectEqualsSlice("lower_cased");
-    try (try Shtick.unallocated("Upper_cased").toSnakeCase(.start_lower)).expectEqualsSlice("upper_cased");
-    try (try Shtick.unallocated("_prefix_cased").toSnakeCase(.start_lower)).expectEqualsSlice("prefix_cased");
-    try (try Shtick.unallocated("___super_pix").toSnakeCase(.start_lower)).expectEqualsSlice("super_pix");
+    try (try Shtick.unallocated("HiYouA!@").toSnakeCase(.start_lower)).expectEquals("hi_you_a!@");
+    try (try Shtick.unallocated("HeyJamboree").toSnakeCase(.start_lower)).expectEquals("hey_jamboree");
+    try (try Shtick.unallocated("OhNo").toSnakeCase(.start_lower)).expectEquals("oh_no");
+    try (try Shtick.unallocated("!$eleven#:").toSnakeCase(.start_lower)).expectEquals("!$eleven#:");
+    try (try Shtick.unallocated("aBCDE").toSnakeCase(.start_lower)).expectEquals("a_b_c_d_e");
+    try (try Shtick.unallocated("_____").toSnakeCase(.start_lower)).expectEquals("");
+    try (try Shtick.unallocated("lower_cased").toSnakeCase(.start_lower)).expectEquals("lower_cased");
+    try (try Shtick.unallocated("Upper_cased").toSnakeCase(.start_lower)).expectEquals("upper_cased");
+    try (try Shtick.unallocated("_prefix_cased").toSnakeCase(.start_lower)).expectEquals("prefix_cased");
+    try (try Shtick.unallocated("___super_pix").toSnakeCase(.start_lower)).expectEquals("super_pix");
 }
 
 test "non-allocked String.toSnakeCase start_upper works" {
-    try (try Shtick.unallocated("HiYouA!@").toSnakeCase(.start_upper)).expectEqualsSlice("Hi_you_a!@");
-    try (try Shtick.unallocated("HeyJamboree").toSnakeCase(.start_upper)).expectEqualsSlice("Hey_jamboree");
-    try (try Shtick.unallocated("OhNo").toSnakeCase(.start_upper)).expectEqualsSlice("Oh_no");
-    try (try Shtick.unallocated("!$eleven#:").toSnakeCase(.start_upper)).expectEqualsSlice("!$eleven#:");
-    try (try Shtick.unallocated("aBCDE").toSnakeCase(.start_upper)).expectEqualsSlice("A_b_c_d_e");
-    try (try Shtick.unallocated("_____").toSnakeCase(.start_upper)).expectEqualsSlice("");
-    try (try Shtick.unallocated("lower_cased").toSnakeCase(.start_upper)).expectEqualsSlice("Lower_cased");
-    try (try Shtick.unallocated("Upper_cased").toSnakeCase(.start_upper)).expectEqualsSlice("Upper_cased");
-    try (try Shtick.unallocated("_prefix_cased").toSnakeCase(.start_upper)).expectEqualsSlice("Prefix_cased");
-    try (try Shtick.unallocated("___super_pix").toSnakeCase(.start_upper)).expectEqualsSlice("Super_pix");
+    try (try Shtick.unallocated("HiYouA!@").toSnakeCase(.start_upper)).expectEquals("Hi_you_a!@");
+    try (try Shtick.unallocated("HeyJamboree").toSnakeCase(.start_upper)).expectEquals("Hey_jamboree");
+    try (try Shtick.unallocated("OhNo").toSnakeCase(.start_upper)).expectEquals("Oh_no");
+    try (try Shtick.unallocated("!$eleven#:").toSnakeCase(.start_upper)).expectEquals("!$eleven#:");
+    try (try Shtick.unallocated("aBCDE").toSnakeCase(.start_upper)).expectEquals("A_b_c_d_e");
+    try (try Shtick.unallocated("_____").toSnakeCase(.start_upper)).expectEquals("");
+    try (try Shtick.unallocated("lower_cased").toSnakeCase(.start_upper)).expectEquals("Lower_cased");
+    try (try Shtick.unallocated("Upper_cased").toSnakeCase(.start_upper)).expectEquals("Upper_cased");
+    try (try Shtick.unallocated("_prefix_cased").toSnakeCase(.start_upper)).expectEquals("Prefix_cased");
+    try (try Shtick.unallocated("___super_pix").toSnakeCase(.start_upper)).expectEquals("Super_pix");
 }
 
 test "non-allocked String.toSnakeCase no_uppers works" {
-    try (try Shtick.unallocated("HiYouA!@").toSnakeCase(.no_uppers)).expectEqualsSlice("_hi_you_a!@");
-    try (try Shtick.unallocated("HeyJamboree").toSnakeCase(.no_uppers)).expectEqualsSlice("_hey_jamboree");
-    try (try Shtick.unallocated("OhNo").toSnakeCase(.no_uppers)).expectEqualsSlice("_oh_no");
-    try (try Shtick.unallocated("!$eleven#:").toSnakeCase(.no_uppers)).expectEqualsSlice("!$eleven#:");
-    try (try Shtick.unallocated("aBCDE").toSnakeCase(.no_uppers)).expectEqualsSlice("a_b_c_d_e");
-    try (try Shtick.unallocated("_____").toSnakeCase(.no_uppers)).expectEqualsSlice("");
-    try (try Shtick.unallocated("lower_cased").toSnakeCase(.no_uppers)).expectEqualsSlice("lower_cased");
-    try (try Shtick.unallocated("Upper_cased").toSnakeCase(.no_uppers)).expectEqualsSlice("_upper_cased");
-    try (try Shtick.unallocated("_prefix_cased").toSnakeCase(.no_uppers)).expectEqualsSlice("_prefix_cased");
-    try (try Shtick.unallocated("___super_pix").toSnakeCase(.no_uppers)).expectEqualsSlice("_super_pix");
+    try (try Shtick.unallocated("HiYouA!@").toSnakeCase(.no_uppers)).expectEquals("_hi_you_a!@");
+    try (try Shtick.unallocated("HeyJamboree").toSnakeCase(.no_uppers)).expectEquals("_hey_jamboree");
+    try (try Shtick.unallocated("OhNo").toSnakeCase(.no_uppers)).expectEquals("_oh_no");
+    try (try Shtick.unallocated("!$eleven#:").toSnakeCase(.no_uppers)).expectEquals("!$eleven#:");
+    try (try Shtick.unallocated("aBCDE").toSnakeCase(.no_uppers)).expectEquals("a_b_c_d_e");
+    try (try Shtick.unallocated("_____").toSnakeCase(.no_uppers)).expectEquals("");
+    try (try Shtick.unallocated("lower_cased").toSnakeCase(.no_uppers)).expectEquals("lower_cased");
+    try (try Shtick.unallocated("Upper_cased").toSnakeCase(.no_uppers)).expectEquals("_upper_cased");
+    try (try Shtick.unallocated("_prefix_cased").toSnakeCase(.no_uppers)).expectEquals("_prefix_cased");
+    try (try Shtick.unallocated("___super_pix").toSnakeCase(.no_uppers)).expectEquals("_super_pix");
 }
 
 test "non-allocked String.toSnakeCase keep_starting_case works" {
-    try (try Shtick.unallocated("HiYouA!@").toSnakeCase(.keep_starting_case)).expectEqualsSlice("Hi_you_a!@");
-    try (try Shtick.unallocated("HeyJamboree").toSnakeCase(.keep_starting_case)).expectEqualsSlice("Hey_jamboree");
-    try (try Shtick.unallocated("OhNo").toSnakeCase(.keep_starting_case)).expectEqualsSlice("Oh_no");
-    try (try Shtick.unallocated("!$eleven#:").toSnakeCase(.keep_starting_case)).expectEqualsSlice("!$eleven#:");
-    try (try Shtick.unallocated("aBCDE").toSnakeCase(.keep_starting_case)).expectEqualsSlice("a_b_c_d_e");
-    try (try Shtick.unallocated("_____").toSnakeCase(.keep_starting_case)).expectEqualsSlice("");
-    try (try Shtick.unallocated("lower_cased").toSnakeCase(.keep_starting_case)).expectEqualsSlice("lower_cased");
-    try (try Shtick.unallocated("Upper_cased").toSnakeCase(.keep_starting_case)).expectEqualsSlice("Upper_cased");
-    try (try Shtick.unallocated("_prefix_cased").toSnakeCase(.keep_starting_case)).expectEqualsSlice("_prefix_cased");
-    try (try Shtick.unallocated("___super_pix").toSnakeCase(.keep_starting_case)).expectEqualsSlice("_super_pix");
+    try (try Shtick.unallocated("HiYouA!@").toSnakeCase(.keep_starting_case)).expectEquals("Hi_you_a!@");
+    try (try Shtick.unallocated("HeyJamboree").toSnakeCase(.keep_starting_case)).expectEquals("Hey_jamboree");
+    try (try Shtick.unallocated("OhNo").toSnakeCase(.keep_starting_case)).expectEquals("Oh_no");
+    try (try Shtick.unallocated("!$eleven#:").toSnakeCase(.keep_starting_case)).expectEquals("!$eleven#:");
+    try (try Shtick.unallocated("aBCDE").toSnakeCase(.keep_starting_case)).expectEquals("a_b_c_d_e");
+    try (try Shtick.unallocated("_____").toSnakeCase(.keep_starting_case)).expectEquals("");
+    try (try Shtick.unallocated("lower_cased").toSnakeCase(.keep_starting_case)).expectEquals("lower_cased");
+    try (try Shtick.unallocated("Upper_cased").toSnakeCase(.keep_starting_case)).expectEquals("Upper_cased");
+    try (try Shtick.unallocated("_prefix_cased").toSnakeCase(.keep_starting_case)).expectEquals("_prefix_cased");
+    try (try Shtick.unallocated("___super_pix").toSnakeCase(.keep_starting_case)).expectEquals("_super_pix");
 }
 
 test "equals works for unallocated shticks" {
@@ -927,12 +925,10 @@ test "equals works for unallocated shticks" {
 
     const shtick3 = Shtick.unallocated("hI");
     try std.testing.expectEqual(false, shtick1.equals(shtick3));
-    try shtick1.expectNotEquals(shtick3);
 
     var shtick4 = try Shtick.init("hi this is going to be more than 16 characters");
     defer shtick4.deinit();
     try std.testing.expectEqual(false, shtick1.equals(shtick4));
-    try shtick1.expectNotEquals(shtick4);
 }
 
 test "equals works for large shticks" {
@@ -947,9 +943,7 @@ test "equals works for large shticks" {
     var shtick3 = try Shtick.init("hello world THIS is over 16 characters");
     defer shtick3.deinit();
     try std.testing.expectEqual(false, shtick1.equals(shtick3));
-    try shtick1.expectNotEquals(shtick3);
 
     const shtick4 = Shtick.unallocated("hello");
     try std.testing.expectEqual(false, shtick1.equals(shtick4));
-    try shtick1.expectNotEquals(shtick4);
 }

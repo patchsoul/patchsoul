@@ -149,12 +149,8 @@ pub fn MaxSizeList(N: comptime_int, comptime T: type) type {
             self.internal_count = 0;
         }
 
-        pub inline fn expectEquals(self: *Self, other: *Self) !void {
-            try self.expectEqualsSlice(other.items());
-        }
-
-        pub inline fn expectEqualsSlice(self: *Self, other: []const T) !void {
-            try common.expectEqualSlices(other, self.items());
+        pub inline fn expectEquals(self: *Self, other: anytype) !void {
+            try common.expectEqualIndexables(other, self);
         }
 
         pub inline fn printLine(self: Self, writer: anytype) !void {
@@ -164,11 +160,11 @@ pub fn MaxSizeList(N: comptime_int, comptime T: type) type {
 
         // Don't include a final `\n` here.
         pub fn printTabbed(self: Self, writer: anytype, tab: u16) !void {
-            try common.printSliceTabbed(writer, self.items(), tab);
+            try common.printIndexableTabbed(writer, self.items(), tab);
         }
 
         pub fn print(self: Self, writer: anytype) !void {
-            try common.printSlice(writer, self.items());
+            try common.printIndexable(writer, self.items());
         }
     };
 }

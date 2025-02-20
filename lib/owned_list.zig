@@ -110,12 +110,8 @@ pub fn OwnedList(comptime T: type) type {
             }
         }
 
-        pub inline fn expectEquals(self: Self, other: Self) !void {
-            try self.expectEqualsSlice(other.items());
-        }
-
-        pub inline fn expectEqualsSlice(self: Self, other: []const T) !void {
-            try common.expectEqualSlices(other, self.items());
+        pub inline fn expectEquals(self: *Self, other: anytype) !void {
+            try common.expectEqualIndexables(other, self);
         }
 
         pub inline fn printLine(self: Self, writer: anytype) !void {
@@ -125,11 +121,11 @@ pub fn OwnedList(comptime T: type) type {
 
         // Don't include a final `\n` here.
         pub fn printTabbed(self: Self, writer: anytype, tab: u16) !void {
-            try common.printSliceTabbed(writer, self.items(), tab);
+            try common.printIndexableTabbed(writer, self.items(), tab);
         }
 
         pub fn print(self: Self, writer: anytype) !void {
-            try common.printSlice(writer, self.items());
+            try common.printIndexable(writer, self.items());
         }
     };
 }
@@ -143,7 +139,7 @@ test "insert works at end" {
     try list.append(56);
     try list.insert(3, 57);
 
-    try std.testing.expectEqualSlices(u32, list.items(), &[_]u32{ 54, 55, 56, 57 });
+    try common.expectEqualIndexables(list.items(), &[_]u32{ 54, 55, 56, 57 });
 }
 
 test "insert works at start" {
@@ -154,7 +150,7 @@ test "insert works at start" {
     try list.insert(0, 101);
     try list.insert(0, 102);
 
-    try std.testing.expectEqualSlices(u8, list.items(), &[_]u8{ 102, 101, 100 });
+    try common.expectEqualIndexables(list.items(), &[_]u8{ 102, 101, 100 });
 }
 
 test "clear gets rid of everything" {
