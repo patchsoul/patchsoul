@@ -10,6 +10,7 @@ pub const set_list = @import("set_list.zig");
 pub const Shtick = @import("shtick.zig").Shtick;
 pub const testing = @import("testing.zig");
 pub const time = @import("time.zig");
+pub const wrap_list = @import("wrap_list.zig");
 
 const std = @import("std");
 

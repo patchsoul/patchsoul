@@ -11,6 +11,18 @@ const zsynth = @import("ziggysynth");
 const std = @import("std");
 const math = std.math;
 
+// TODO: work columns 1-9 + 0.
+// each work column is a vertical sliver of screen real estate, about 120 columns each.
+// if your screen is wide enough for 2 columns, it will put two work columns on screen.
+// e.g., if navigating to work column 1, it will put work column 1 on the left and 2 on the right.
+// it uses wrap around, so navigating to 9 will give 9 on the left and 0 on the right.
+// if your screen is wide enough for 3 columns, we'll show 3 work columns, etc.
+// if your screen isn't wide enough for 2, we'll always show 1, regardless of width.
+// doing it this way means that we don't need to worry about shrinking our terminal (e.g.,
+// to go side-by-side with a browser or other terminal) and messing up the workspace.
+// TODO: every open file will get put into a canonical form path in an in-memory `Files` struct.
+// `Files` will eventually watch OS files for changes and trigger file-change events.
+
 /// This will reset the terminal if panics occur.
 pub const panic_handler = vaxis.panic_handler;
 
@@ -29,6 +41,7 @@ last_port_count: usize = 0,
 port_update_message: lib.Shtick,
 log_file: ?std.fs.File,
 track_editor: TrackEditor,
+messages: context.Messages = .{},
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     // TODO: make this a command-line option, defaulting to SoundFont.sf2 if nothing else is passed in.
@@ -107,7 +120,7 @@ pub fn run(self: *Self) !void {
 
     while (!self.should_quit) {
         loop.pollEvent();
-        var windowless = context.Windowless{ .harmony = &self.harmony };
+        var windowless = context.Windowless{ .harmony = &self.harmony, .messages = &self.messages };
         while (loop.tryEvent()) |event| {
             try self.update(&windowless, event);
         }

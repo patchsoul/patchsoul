@@ -383,11 +383,11 @@ pub const Shtick = extern struct {
         try writer.print("{s}", .{self.slice()});
     }
 
-    pub fn equals(self: Self, other: Self) bool {
-        if (self.count() != other.count()) {
-            return false;
-        }
-        return std.mem.eql(u8, self.slice(), other.slice());
+    pub fn equals(self: Self, other: anytype) bool {
+        const other_is_shtick = @TypeOf(other) == Self;
+        const other_count = if (other_is_shtick) other.count() else other.len;
+        if (other_count != self.count()) return false;
+        return std.mem.eql(u8, self.slice(), if (other_is_shtick) other.slice() else other);
     }
 
     pub fn expectEquals(a: Self, b: Self) !void {

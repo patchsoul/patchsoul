@@ -1,3 +1,4 @@
+const lib = @import("lib");
 const Harmony = @import("Harmony.zig");
 const vaxis = @import("vaxis");
 
@@ -6,6 +7,10 @@ pub const ChildOptions = vaxis.Window.ChildOptions;
 pub const Segment = vaxis.Segment;
 pub const Style = vaxis.Style;
 
+pub const Message = lib.Shtick;
+pub const max_message_count = 32;
+pub const Messages = lib.wrap_list.WrapList(max_message_count, Message);
+
 pub const Windowed = struct {
     window: vaxis.Window,
     harmony: *Harmony,
@@ -13,6 +18,7 @@ pub const Windowed = struct {
     /// Mouse event to be handled during draw cycle.
     mouse: ?vaxis.Mouse = null,
     needs_full_redraw: bool = false,
+    messages: *Messages,
     // TODO: add a `focused` argument
 
     pub fn drawChild(self: *Self, child: anytype, options: ChildOptions) !void {
@@ -32,6 +38,7 @@ pub const Windowless = struct {
     /// Mouse event to be handled during draw cycle.
     mouse: ?vaxis.Mouse = null,
     needs_full_redraw: bool = false,
+    messages: *Messages,
 
     pub fn windowed(self: *Self, vx: *vaxis.Vaxis) Windowed {
         return Windowed{
@@ -39,6 +46,7 @@ pub const Windowless = struct {
             .harmony = self.harmony,
             .mouse = self.mouse,
             .needs_full_redraw = self.needs_full_redraw,
+            .messages = self.messages,
         };
     }
 

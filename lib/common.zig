@@ -110,20 +110,7 @@ pub inline fn when(a: anytype, comptime predicate: fn (Found(@TypeOf(a))) bool) 
     };
 }
 
-pub fn printSlice(writer: anytype, slice: anytype) !void {
-    try writer.print("[", .{});
-    for (slice) |item| {
-        if (std.meta.hasMethod(@TypeOf(item), "print")) {
-            try item.print(writer);
-            try writer.print(", ", .{});
-        } else {
-            try writer.print("{}, ", .{item});
-        }
-    }
-    try writer.print("]", .{});
-}
-
-pub fn printIndexed(writer: anytype, i: usize, tab: u16) !void {
+pub fn printIndex(writer: anytype, i: usize, tab: u16) !void {
     if (i % 5 == 0) {
         for (0..tab) |_| {
             try writer.print(" ", .{});
@@ -139,6 +126,19 @@ pub fn printIndexed(writer: anytype, i: usize, tab: u16) !void {
     }
 }
 
+pub fn printSlice(writer: anytype, slice: anytype) !void {
+    try writer.print("[", .{});
+    for (slice) |item| {
+        if (std.meta.hasMethod(@TypeOf(item), "print")) {
+            try item.print(writer);
+            try writer.print(", ", .{});
+        } else {
+            try writer.print("{}, ", .{item});
+        }
+    }
+    try writer.print("]", .{});
+}
+
 // Doesn't include a final `\n` here.
 pub fn printSliceTabbed(writer: anytype, slice: anytype, tab: u16) !void {
     for (0..tab) |_| {
@@ -147,7 +147,7 @@ pub fn printSliceTabbed(writer: anytype, slice: anytype, tab: u16) !void {
     try writer.print("{{\n", .{});
     for (0..slice.len) |i| {
         const item = slice[i];
-        try printIndexed(writer, i, tab);
+        try printIndex(writer, i, tab);
         if (std.meta.hasMethod(@TypeOf(item), "printTabbed")) {
             try item.printTabbed(writer, tab + 4);
             try writer.print(",\n", .{});
@@ -166,10 +166,69 @@ pub fn printSliceLine(writer: anytype, slice: anytype) !void {
     try writer.print("\n", .{});
 }
 
-pub fn equal(a: anytype, b: @TypeOf(a)) bool {
+// Doesn't include a final `\n` here.
+pub fn printIndexable(writer: anytype, indexable: anytype) !void {
+    try writer.print("[", .{});
+    const Indexable = @TypeOf(indexable);
+    const count = if (std.meta.hasMethod(Indexable, "count")) indexable.count() else indexable.len;
+    for (0..count) |index| {
+        const item = if (std.meta.hasMethod(Indexable, "inBounds")) indexable.inBounds(index) else indexable[index];
+        try printItemTabbed(writer, item, 0);
+    }
+    try writer.print("]", .{});
+}
+
+// Doesn't include a final `\n` here.
+pub fn printIndexableTabbed(writer: anytype, indexable: anytype, tab: u16) !void {
+    for (0..tab) |_| {
+        try writer.print(" ", .{});
+    }
+    try writer.print("{{\n", .{});
+    const Indexable = @TypeOf(indexable);
+    const count = if (std.meta.hasMethod(Indexable, "count")) indexable.count() else indexable.len;
+    for (0..count) |index| {
+        const item = if (std.meta.hasMethod(Indexable, "inBounds")) indexable.inBounds(index) else indexable[index];
+        try printIndex(writer, index, tab);
+        try printItemTabbed(writer, item, tab + 4);
+    }
+    try writer.print("}}", .{});
+}
+
+pub fn printItemTabbed(writer: anytype, item: anytype, tab: u16) !void {
+    const Item = @TypeOf(item);
+    if (std.meta.hasMethod(Item, "printTabbed")) {
+        try item.printTabbed(writer, tab);
+        try writer.print(",\n", .{});
+    } else if (std.meta.hasMethod(Item, "print")) {
+        try item.print(writer);
+        try writer.print(",\n", .{});
+    } else if (comptime isString(Item)) {
+        try writer.print("{s},\n", .{item});
+    } else {
+        try writer.print("{},\n", .{item});
+    }
+}
+
+pub fn isString(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Pointer => |Pointer| (Pointer.size == .Slice and Pointer.child == u8) or isString(Pointer.child),
+        else => false,
+    };
+}
+
+pub fn printIndexableLine(writer: anytype, slice: anytype) !void {
+    try printIndexableTabbed(writer, slice, 0);
+    try writer.print("\n", .{});
+}
+
+pub fn equal(a: anytype, b: anytype) bool {
     const A = @TypeOf(a);
     if (std.meta.hasMethod(A, "equals")) {
         return a.equals(b);
+    }
+    const B = @TypeOf(b);
+    if (A != B) {
+        return false;
     }
     return switch (@typeInfo(A)) {
         .Struct => structEqual(a, b),
@@ -201,6 +260,7 @@ pub fn taggedEqual(a: anytype, b: @TypeOf(a)) bool {
     unreachable;
 }
 
+// TODO: delete and migrate to `expectEqualIndexables`
 pub fn expectEqualSlices(other: anytype, self: anytype) !void {
     errdefer {
         debug_stderr.print("expected:\n", .{}) catch {};
@@ -223,6 +283,36 @@ pub fn expectEqualSlices(other: anytype, self: anytype) !void {
     // We error out "late" for equal lengths in case it's interesting
     // what's different on the inside (can help with debugging).
     try std.testing.expectEqual(other.len, self.len);
+}
+
+const IndexableError = error{not_equal};
+
+pub fn expectEqualIndexables(b: anytype, a: anytype) !void {
+    errdefer {
+        debug_stderr.print("expected:\n", .{}) catch {};
+        printIndexableLine(debug_stderr, b) catch {};
+
+        debug_stderr.print("got:\n", .{}) catch {};
+        printIndexableLine(debug_stderr, a) catch {};
+    }
+    const A = @TypeOf(a);
+    const B = @TypeOf(b);
+
+    const a_count = if (std.meta.hasMethod(A, "count")) a.count() else a.len;
+    const b_count = if (std.meta.hasMethod(B, "count")) b.count() else b.len;
+
+    for (0..@min(a_count, b_count)) |index| {
+        const a_item = if (std.meta.hasMethod(A, "inBounds")) a.inBounds(index) else a[index];
+        const b_item = if (std.meta.hasMethod(B, "inBounds")) b.inBounds(index) else b[index];
+        if (equal(a_item, b_item)) {
+            continue;
+        }
+        debug_stderr.print("\nnot equal at index {d}\n\n", .{index}) catch {};
+        return IndexableError.not_equal;
+    }
+    // We error out "late" for equal lengths in case it's interesting
+    // what's different on the inside (can help with debugging).
+    try std.testing.expectEqual(b_count, a_count);
 }
 
 pub inline fn before(a: anytype) ?@TypeOf(a) {
@@ -312,4 +402,14 @@ test "expectEqualSlices fails when different" {
         &[_]u8{ 0, 1, 22, 3, 4 },
         &[_]u8{ 0, 1, 20, 3, 4 },
     ));
+}
+
+test "isString works" {
+    try std.testing.expect(isString([]u8));
+    try std.testing.expect(isString([]const u8));
+    try std.testing.expect(isString(*[]const u8));
+    try std.testing.expect(isString(**[]const u8));
+    try std.testing.expect(!isString([]u32));
+    try std.testing.expect(!isString(u32));
+    try std.testing.expect(!isString(u8));
 }
