@@ -1,12 +1,13 @@
 const common = @import("common.zig");
 const lib_file = @import("file.zig");
+const max_size_list = @import("max_size_list.zig");
 const owned_list = @import("owned_list.zig");
 const Shtick = @import("shtick.zig").Shtick;
 
 const ByteCountReader = lib_file.ByteCountReader;
 const FileHelper = lib_file.Helper;
 const OwnedTrackEvents = owned_list.OwnedList(TrackEvent);
-const OwnedTracks = owned_list.OwnedList(Track);
+const OwnedTracks = max_size_list.MaxSizeList(File.max_track_count, Track);
 
 const std = @import("std");
 
@@ -185,7 +186,6 @@ pub const File = struct {
 
     path: Shtick,
     header: Header,
-    // TODO: use MaxSizeList for the track list (max of 32).
     tracks: OwnedTracks,
 
     pub fn deinit(self: *Self) void {

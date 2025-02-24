@@ -15,6 +15,11 @@ pub fn cleanUp() void {
     stderr_data.reset();
 }
 
+pub const allocator: std.mem.Allocator = if (in_test)
+    std.testing.allocator
+else
+    gpa.allocator();
+
 pub fn to(primitive: type, value: anytype) ?primitive {
     if (value < std.math.minInt(primitive) or value > std.math.maxInt(primitive)) {
         return null;
@@ -26,11 +31,6 @@ pub fn isLittleEndian() bool {
     return builtin.target.cpu.arch.endian() == .little;
 }
 
-pub const allocator: std.mem.Allocator = if (in_test)
-    std.testing.allocator
-else
-    gpa.allocator();
-
 pub const At = enum {
     start,
     end,
@@ -40,6 +40,11 @@ pub const Error = error{
     unknown,
     invalid_argument,
 };
+
+pub fn sliceWithConstnessOf(comptime ThisType: type, comptime OtherType: type) type {
+    const is_const = @typeInfo(ThisType).Pointer.is_const;
+    return if (is_const) []const OtherType else []OtherType;
+}
 
 // TODO: ideally we wouldn't create these in non-test environments.
 //       probably the best we can do is minimize the buffers internally.
@@ -323,14 +328,41 @@ test "when works with error unions" {
     try std.testing.expectEqual(true, when(my_i32, Test.big));
 }
 
+test "expectEqualIndexables can work" {
+    try expectEqualIndexables(
+        &[_]u8{},
+        &[_]u8{},
+    );
+    try expectEqualIndexables(
+        &[_]u8{ 2, 3 },
+        &[_]u8{ 2, 3 },
+    );
+    try expectEqualIndexables(
+        &[_]u8{ 2, 3, 7, 7, 100 },
+        &[_]u8{ 2, 3, 7, 7, 100 },
+    );
+}
+
 test "expectEqualIndexables fails when different sizes" {
     try std.testing.expectError(error.TestExpectedEqual, expectEqualIndexables(
         &[_]u8{ 0, 1, 2, 3 },
         &[_]u8{ 0, 1, 2, 3, 4 },
     ));
+    try std.testing.expectError(error.TestExpectedEqual, expectEqualIndexables(
+        &[_]u8{ 2, 3, 4 },
+        &[_]u8{ 2, 3 },
+    ));
+    try std.testing.expectError(error.TestExpectedEqual, expectEqualIndexables(
+        &[_]u8{},
+        &[_]u8{7},
+    ));
+    try std.testing.expectError(error.TestExpectedEqual, expectEqualIndexables(
+        &[_]u8{8},
+        &[_]u8{},
+    ));
 }
 
-test "expectEqualSlices fails when different" {
+test "expectEqualIndexables fails when different" {
     try std.testing.expectError(error.TestExpectedEqual, expectEqualIndexables(
         &[_]u8{ 0, 1, 22, 3, 4 },
         &[_]u8{ 0, 1, 20, 3, 4 },

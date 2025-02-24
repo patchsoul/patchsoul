@@ -32,9 +32,7 @@ pub fn MaxSizeList(N: comptime_int, comptime T: type) type {
             }
         }
 
-        // TODO: can we make `self` an `anytype` here and deduce the const'ness of it
-        // for the return type `[]T` vs. `[]constT`?
-        pub inline fn items(self: *Self) []T {
+        pub inline fn items(self: anytype) common.sliceWithConstnessOf(@TypeOf(self), T) {
             return self.array[0..self.count()];
         }
 
@@ -204,4 +202,33 @@ test "clear gets rid of everything" {
     list.clear();
 
     try std.testing.expectEqual(0, list.count());
+}
+
+fn constMax(list: *const MaxSizeList(2, i8)) !void {
+    try std.testing.expect(list.count() > 0);
+    var value: i8 = -13;
+    for (list.items()) |*item| {
+        try std.testing.expectEqual(value, item.*);
+        try std.testing.expectEqual(*const i8, @TypeOf(item));
+        value = 15;
+    }
+}
+
+fn varMax(list: *MaxSizeList(2, i8)) !void {
+    try std.testing.expect(list.count() > 0);
+    var value: i8 = -13;
+    for (list.items()) |*item| {
+        try std.testing.expectEqual(value, item.*);
+        try std.testing.expectEqual(*i8, @TypeOf(item));
+        value = 15;
+    }
+}
+
+test "items() can be const or variable" {
+    var list = MaxSizeList(2, i8).init();
+    defer list.deinit();
+    try list.append(-13);
+    try list.append(15);
+    try constMax(&list);
+    try varMax(&list);
 }
